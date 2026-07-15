@@ -4,6 +4,18 @@ Canonical model document, resource graph, diagnostics, and adapter contracts.
 
 This repository is the dedicated package boundary defined by ADR 0094.
 
+## Implementation tracker
+
+The canonical conversion architecture is defined by [ADR 0094 in `plasius-ltd-site`](https://github.com/Plasius-LTD/plasius-ltd-site/blob/main/docs/adrs/adr-0094-gpu-model-family-and-canonical-proxy-conversion.md). The package implementation work is split into Project-tracked Tasks:
+
+- [Bootstrap package boundary](https://github.com/Plasius-LTD/gpu-model-core/issues/1)
+- [Canonical GPU model document schema](https://github.com/Plasius-LTD/gpu-model-core/issues/3)
+- [Diagnostics and repair contracts](https://github.com/Plasius-LTD/gpu-model-core/issues/4)
+- [Canonical model resource graph](https://github.com/Plasius-LTD/gpu-model-core/issues/5)
+- [Adapter capability and conversion registry contracts](https://github.com/Plasius-LTD/gpu-model-core/issues/6)
+
+All implementation Tasks inherit `gpu.model.conversion.enabled` from Feature #1148 and remain independent of format-specific loader repositories and renderer integration packages.
+
 ## Bootstrap status
 
 This initial repository contains the approved schema baseline, legal and governance files, and a package smoke-test surface. Functional model conversion work is tracked in the repository's [TASK] issues and must flow through the canonical GPU model boundary.
