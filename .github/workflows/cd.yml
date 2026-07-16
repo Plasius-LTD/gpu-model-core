@@ -108,6 +108,37 @@ jobs:
           fi
           if has_script pack:check; then npm run pack:check; fi
 
+      - name: Locate coverage report for Codecov
+        if: steps.release.outputs.should_finalize_release == 'true'
+        run: |
+          set -euo pipefail
+          LCOV_FILE="$(find coverage -type f -name lcov.info | head -n 1 || true)"
+          if [ -z "$LCOV_FILE" ]; then
+            echo "No lcov.info found under coverage/."
+            exit 1
+          fi
+          echo "Using coverage report: $LCOV_FILE"
+          echo "LCOV_FILE=$LCOV_FILE" >> "$GITHUB_ENV"
+
+      # Codecov uploads run only for releases and are best-effort because
+      # service or monthly quota failures must not block npm publication.
+      - name: Upload coverage to Codecov (best effort)
+        id: codecov
+        if: steps.release.outputs.should_finalize_release == 'true' && env.LCOV_FILE != ''
+        continue-on-error: true
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ${{ env.LCOV_FILE }}
+          flags: unittests
+          fail_ci_if_error: true
+          slug: ${{ github.repository }}
+
+      - name: Report Codecov upload warning
+        if: always() && steps.codecov.outcome == 'failure'
+        run: |
+          echo "::warning title=Codecov upload unavailable::Release coverage upload failed or was quota-limited; release validation and publication will continue."
+
       - name: Generate SBOM (CycloneDX)
         if: steps.release.outputs.should_finalize_release == 'true'
         run: npm sbom --sbom-format=cyclonedx --sbom-type=library --omit dev > sbom.cdx.json

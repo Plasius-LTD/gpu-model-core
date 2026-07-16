@@ -12,6 +12,10 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 - **Added**
   - Bootstrapped the dedicated package repository from the schema baseline.
   - Added the gpu.model.conversion.enabled rollout reference and package smoke test.
+  - Added Project-tracked Tasks for the canonical schema, diagnostics, resource graph, and adapter registry implementation boundaries.
+
+- **Changed**
+  - Made release-only Codecov coverage uploads best-effort; CI coverage gates remain independent while Codecov quota or service failures emit warnings without blocking publication.
 
 - **Added**
   - (placeholder)
