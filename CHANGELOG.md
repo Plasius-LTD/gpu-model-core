@@ -14,6 +14,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Added the gpu.model.conversion.enabled rollout reference and package smoke test.
   - Added Project-tracked Tasks for the canonical schema, diagnostics, resource graph, and adapter registry implementation boundaries.
 
+- **Changed**
+  - Made Codecov coverage uploads best-effort; local tests, LCOV generation, and the 80% coverage gate remain release-blocking while Codecov quota or service failures emit warnings only.
+
 - **Added**
   - (placeholder)
 
