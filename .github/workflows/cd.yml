@@ -40,7 +40,7 @@ jobs:
 
   publish:
     needs: prepare_release
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(vars.CD_RUNNER_LABELS || '["self-hosted","Linux","X64"]') }}
     environment: production
     steps:
       - name: Checkout prepared release commit
@@ -131,7 +131,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ${{ env.LCOV_FILE }}
           flags: unittests
-          fail_ci_if_error: true
+          fail_ci_if_error: false
           slug: ${{ github.repository }}
 
       - name: Report Codecov upload warning
