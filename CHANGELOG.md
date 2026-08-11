@@ -15,6 +15,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Added Project-tracked Tasks for the canonical schema, diagnostics, resource graph, and adapter registry implementation boundaries.
 
 - **Changed**
+  - Bound npm publication to the exact prepared `main` commit after successful push-triggered CI.
   - Made release-only Codecov coverage uploads best-effort; CI coverage gates remain independent while Codecov quota or service failures emit warnings without blocking publication.
 
 - **Added**
@@ -27,6 +28,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Security**
+  - Removed the npm write-token path, added a fail-closed npm 11.5.1-or-newer OIDC guard, and denied fork PR code access to self-hosted CI.
   - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
   - (placeholder)
 

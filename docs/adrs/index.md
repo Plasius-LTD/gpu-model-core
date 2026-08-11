@@ -5,3 +5,4 @@
 - [ADR-0003: Dual Module Runtime Boundary Enforcement](./adr-0003-dual-module-runtime-boundary.md)
 - [ADR-0004: Field Exposure Metadata and Public Serialization](./adr-0004-field-exposure-and-public-serialization.md)
 - [ADR-0005: GPU Model Core Package Boundary](./adr-0005-gpu-model-core-package-boundary.md)
+- [ADR-0006: Hosted OIDC Package Publication](./adr-0006-hosted-oidc-package-publication.md)
