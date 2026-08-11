@@ -1,6 +1,6 @@
 # ADR Index
 
-- [ADR-0001: Schema Library Purpose and Scope](./adr-0001:%20schema.md)
-- [ADR-0002: Dual ESM and CJS Distribution](./adr-0002:%20Dual%20ESM%20and%20CJS%20Distribution.md)
+- [ADR-0001: GPU model core package boundary](./adr-0001-gpu-model-core-package-boundary.md)
+- [ADR-0002: Dual ESM and CJS distribution](./adr-0002-dual-esm-cjs-distribution.md)
 - [ADR-0003: Dual Module Runtime Boundary Enforcement](./adr-0003-dual-module-runtime-boundary.md)
-- [ADR-0004: Field Exposure Metadata and Public Serialization](./adr-0004-field-exposure-and-public-serialization.md)
+- [ADR-0005: Model GPU compatibility belongs to the immutable model version](./adr-0005-model-gpu-compatibility-contract.md)

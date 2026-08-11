@@ -13,10 +13,13 @@ To protect the intellectual property of this project and ensure clarity of right
 2. Fill in the required details, sign, and date it.
 3. Email a PDF copy of the signed document to **[contributors@plasius.co.uk](mailto:contributors@plasius.co.uk)** with subject: `CLA – Individual` or `CLA – Corporate`.
 
-## Registry
+## Records
 
-All signed CLAs are logged internally in the CLA registry (`CLA-REGISTRY.csv`).
+Signed agreements are recorded in an access-controlled internal system. No
+contributor signatures, addresses, or agreement registry belongs in this
+public source package.
 
 ## Questions?
 
-If you have any questions about which CLA to sign or how the process works, please email **[contributors@plasius.co.uk](mailtocontributors@plasius.co.uk)**.
+If you have any questions about which CLA to sign or how the process works,
+please email **[contributors@plasius.co.uk](mailto:contributors@plasius.co.uk)**.
