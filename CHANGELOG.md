@@ -9,13 +9,17 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+- Added a fail-closed, version-`0.1.0`-only first-publication bootstrap that is available solely through `cd.yml` and the `production` environment, refuses an existing npm package, and is removed after trusted publishing is bound.
+
 - **Added**
   - Bootstrapped the dedicated package repository from the schema baseline.
   - Added the gpu.model.conversion.enabled rollout reference and package smoke test.
   - Added Project-tracked Tasks for the canonical schema, diagnostics, resource graph, and adapter registry implementation boundaries.
 
 - **Changed**
+  - Bound npm publication to the exact prepared `main` commit after successful push-triggered CI.
   - Made release-only Codecov coverage uploads best-effort; CI coverage gates remain independent while Codecov quota or service failures emit warnings without blocking publication.
+  - Forwarded an explicitly selected first-publication bootstrap policy from the `prepare` dispatch to the exact-commit `publish` dispatch while preserving token-free defaults and prohibiting automatic credential fallback.
 
 - **Added**
   - (placeholder)
@@ -27,6 +31,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Security**
+  - Removed the npm write-token path, added a fail-closed npm 11.5.1-or-newer OIDC guard, and denied fork PR code access to self-hosted CI.
+  - Required an npm `E404` package-absence result before the one-time `0.1.0` credential may be used; registry and transport failures now fail closed.
+  - Pinned patched `brace-expansion`, `nanoid`, and `postcss` transitive build dependencies so the complete release toolchain passes the high-severity audit gate.
   - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
   - (placeholder)
 

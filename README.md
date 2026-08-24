@@ -48,7 +48,16 @@ Apache-2.0. See LICENSE, SECURITY.md, and the files under legal/.
 
 CI keeps the administrative contributor registry outside Git and npm package
 artifacts using exact, case-normalised path checks. CI runs on approved
-self-hosted runners. Release preparation and npm publication use GitHub-hosted
-runners with Node.js 24.18.0 LTS. CD remains disabled until the npm trusted
-publisher binding is verified and the legacy token fallback is removed.
+self-hosted runners for same-repository pull requests and `main`; fork PR code
+is denied. Normal publication uses the GitHub-hosted `production` job with Node 24 and
+npm 11.5.1 or newer. It is token-free and proceeds only while the prepared SHA
+is the exact `main` head after successful push-triggered CI. Because npm cannot
+bind a trusted publisher before the package exists, the initial `0.1.0` release
+has an explicit, package-absence-checked bootstrap path using a short-lived
+credential in `production`. An operator must select `bootstrap_first_publish`
+on the `prepare` dispatch; `queue_publish` forwards that exact selection to the
+exact-commit `publish` dispatch. The default remains token-free, registry
+transport failures do not count as proof of package absence, and an OIDC error
+never activates the bootstrap path. Remove that path and credential immediately
+after the trusted publisher is bound and a later OIDC release is proven.
 <!-- END PLASIUS RELEASE INTEGRITY -->
