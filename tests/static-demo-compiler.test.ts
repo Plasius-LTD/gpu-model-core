@@ -204,6 +204,32 @@ describe("bounded static-demo compiler document", () => {
     extremeInput.bounds = { min: [-scale, 0, -scale], max: [scale, 2 * scale, scale] };
     await expect(createGpuModelStaticDemoCompilerInput(await createStatic(extremeInput), ENABLED))
       .rejects.toMatchObject({ code: "limit-exceeded", path: "$.bounds" });
+
+    const disguisedExtremeInput = staticDemoDocument();
+    const disguisedBytes = fixtureBuffer();
+    const disguisedView = new DataView(disguisedBytes.buffer);
+    disguisedView.setFloat32(0, -GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES, true);
+    disguisedView.setFloat32(12, GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES + 1, true);
+    const disguisedHash = sha256(disguisedBytes);
+    (disguisedExtremeInput.resources as Array<Record<string, unknown>>)[0] = {
+      id: "buffer-main",
+      kind: "buffer",
+      contentHash: disguisedHash,
+      byteLength: disguisedBytes.byteLength,
+      mimeType: "application/octet-stream",
+      payload: new Blob([disguisedBytes.buffer as ArrayBuffer], { type: "application/octet-stream" }),
+    };
+    const disguisedPositions = (disguisedExtremeInput.accessors as Array<Record<string, unknown>>)
+      .find(({ id }) => id === "positions")!;
+    disguisedPositions.min = [-GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES, 0, -1];
+    disguisedPositions.max = [GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES + 1, 2, 1];
+    disguisedExtremeInput.bounds = {
+      min: [-GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES, 0, -1],
+      max: [GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES, 2, 1],
+    };
+    (disguisedExtremeInput.provenance as Record<string, unknown>).sourceContentHash = disguisedHash;
+    await expect(createStatic(disguisedExtremeInput))
+      .rejects.toMatchObject({ code: "invalid-reference", path: "$.bounds" });
   });
 
   it("rejects incomplete triangle groups and singular world transforms", async () => {

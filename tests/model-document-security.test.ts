@@ -15,6 +15,7 @@ import {
   PNG_1X1,
   collect,
   fixtureBuffer,
+  rigidDocument,
   sha256,
   validDocument,
 } from "./fixtures/model-document-fixture.js";
@@ -279,6 +280,35 @@ describe("verified canonical resource boundary", () => {
     };
     await expect(createAndVerifyGpuModelDocument(document, new FixtureVerificationPort()))
       .rejects.toThrowError(/world-geometry vertex count/iu);
+  });
+
+  it("indexes shared mesh primitives once before validating many instances", async () => {
+    const input = rigidDocument();
+    const primitiveCount = 4_096;
+    const nodeCount = GPU_MODEL_DOCUMENT_LIMITS.roots;
+    const mesh = (input.meshes as Array<Record<string, unknown>>)[0]!;
+    mesh.primitives = Array.from({ length: primitiveCount }, (_entry, index) => ({
+      id: `primitive-${String(index)}`,
+      topology: "points",
+      attributes: [{ semantic: "POSITION", accessorId: "positions" }],
+    }));
+    const roots = Array.from({ length: nodeCount }, (_entry, index) => `node-${String(index)}`);
+    input.roots = roots;
+    input.nodes = roots.map((id) => ({
+      id,
+      children: [],
+      meshId: "mesh-main",
+      localMatrix: [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ],
+    }));
+
+    const model = await createAndVerifyGpuModelDocument(input, new FixtureVerificationPort());
+    expect(model.meshes[0]?.primitives).toHaveLength(primitiveCount);
+    expect(model.nodes).toHaveLength(nodeCount);
   });
 
   it("rejects Blob subclasses with attacker-controlled instance behavior", async () => {

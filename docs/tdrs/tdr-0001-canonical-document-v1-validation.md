@@ -63,8 +63,11 @@ root membership, skin-to-mesh linkage, inverse-bind ordering, explicit authored
 weight rows, blend-shape deltas, clip duration/timing, texture usage/colour
 space/transforms, primitive `TEXCOORD_n` availability, and namespaced material
 extension payloads are preserved and validated. Accessor payload evidence and
-index extrema are cached, while aggregate index and instanced-world geometry
-work is capped before repeated traversal. Tolerant repair and conversion-loss policy remain Task #4 concerns;
+index extrema are cached. Per-mesh primitive/position evidence is constructed
+once, aggregate instanced-world geometry is capped before traversal, scene
+ancestry is indexed in one pass, and rig membership uses sets. Blend-shape
+deltas/accessor references are aggregate-bounded and consume existing payload
+evidence without rereading bytes. Tolerant repair and conversion-loss policy remain Task #4 concerns;
 external/package resource-graph expansion remains Task #5.
 
 ## Compatibility
@@ -82,6 +85,8 @@ world triangles, 4,096 nodes, 16,384 primitives, 4,096 materials, 16 MiB per
 resource, and 16 MiB aggregate resources. Callers may tighten those values.
 World coordinates additionally use the fixed PVOX-compatible absolute ceiling
 of 1,048,576 metres and derived non-raiseable axis-extent/diagonal ceilings.
+Bounds comparisons on this security path use tight absolute equality, and the
+compiler independently checks every computed world-triangle coordinate.
 
 The profile rejects skins, skeletons, joints, blend shapes, animation, analytic
 geometry, images, texture bindings, custom/specular-glossiness workflows,

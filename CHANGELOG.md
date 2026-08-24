@@ -36,6 +36,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 - **Fixed**
   - Made resource re-verification idempotent while still enforcing tighter cached limits and cancellation, and cross-checked every material texture binding against the primitive's required `TEXCOORD_n` attribute.
+  - Removed multiplicative mesh-instance, rig-ancestry, and blend-shape validation paths by indexing reusable evidence once and applying aggregate work ceilings.
   - (placeholder)
 
 - **Security**
@@ -46,6 +47,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Updated transitive development-tool overrides for `brace-expansion` and `nanoid` to patched releases after dependency advisory review; runtime dependencies remain unaffected.
   - Added fail-closed resource/image budgets, MIME and image inspection, affine-matrix enforcement, and control/bidirectional-text escaping for bounded validation errors.
   - Bound returned resource payloads to the exact digest snapshot, propagated a real internal deadline signal through verification ports and chunks, capped aggregate instanced-geometry work, cached repeated geometry evidence, and fixed the static PVOX coordinate ceiling at 1,048,576 metres.
+  - Replaced coordinate-relative bounds tolerance with tight absolute equality and independently rejected computed static-demo triangle coordinates outside the PVOX range.
   - (placeholder)
 
 ## [1.2.17] - 2026-06-28

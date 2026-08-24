@@ -71,7 +71,10 @@ joint indices, mismatched weights, texture bindings whose required
 `TEXCOORD_n` is absent from a material-using primitive, and bounds that do not
 match canonical `POSITION` bytes under affine world transforms. Payload,
 index, and instanced world-geometry work has aggregate ceilings; accessor
-evidence and repeated position/index scans are cached within one validation.
+evidence, mesh primitive/position indexes, and repeated position/index scans
+are cached within one validation. Scene ancestry uses one bounded interval
+index rather than per-joint parent walks. Blend-shape delta/accessor work is
+bounded across the document and reuses the verified payload evidence.
 
 `createGpuModelDocument` remains available for trusted composition code that
 already holds privately verified resources. `isGpuModelDocument` narrows only
@@ -111,7 +114,9 @@ The profile accepts at most 200,000 explicit world-space triangles, 4,096
 nodes, 16,384 primitives, 4,096 fixed-factor materials, and 16 MiB of verified
 buffer resources. Every world-space coordinate additionally has a fixed,
 non-raiseable magnitude ceiling of 1,048,576 metres, with consistent axis
-extent and diagonal bounds. It accepts only rigid `triangles`, opaque texture-free
+extent and diagonal bounds. The compiler also checks every computed triangle
+coordinate against that ceiling; security bounds use tight absolute equality
+instead of coordinate-relative tolerance. It accepts only rigid `triangles`, opaque texture-free
 metallic-roughness or unlit materials, invertible transforms, and geometry
 whose verified bounds prove metre/Y-up/-Z-forward/floor-centred normalization.
 Skins, animation, morphs, analytic geometry, images, texture bindings, custom

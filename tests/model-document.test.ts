@@ -11,6 +11,7 @@ import {
   FixtureVerificationPort,
   IDENTITY_MATRIX,
   fixtureBuffer,
+  rigidDocument,
   sha256,
   validDocument,
   withVerifiedResources,
@@ -362,6 +363,83 @@ describe("canonical GPU model document", () => {
     const animation = validDocument();
     replaceBuffer(animation, (_bytes, view) => view.setFloat32(200, Number.NaN, true));
     await reject(animation, /non-finite/iu);
+  });
+
+  it("validates deep rig ancestry and membership in linear work", async () => {
+    const input = rigidDocument();
+    const jointCount = 3_000;
+    const nodeIds = Array.from({ length: jointCount }, (_entry, index) => `node-${String(index)}`);
+    const jointIds = Array.from({ length: jointCount }, (_entry, index) => `joint-${String(index)}`);
+    input.roots = [nodeIds[0]!];
+    input.nodes = nodeIds.map((id, index) => ({
+      id,
+      children: index + 1 < nodeIds.length ? [nodeIds[index + 1]!] : [],
+      ...(index === 0 ? { meshId: "mesh-main" } : {}),
+      localMatrix: IDENTITY_MATRIX,
+    }));
+    input.skeletons = [{
+      id: "skeleton-main",
+      jointIds,
+      rootJointIds: [jointIds[0]!],
+      sourceMetadata: {},
+    }];
+    input.joints = jointIds.map((id, index) => ({
+      id,
+      nodeId: nodeIds[index],
+      ...(index > 0 ? { parentJointId: jointIds[0] } : {}),
+      restLocalTransform: { translation: [0, 0, 0], rotation: [0, 0, 0, 1], scale: [1, 1, 1] },
+      sourceMetadata: {},
+    }));
+
+    const model = await create(input);
+    expect(model.joints).toHaveLength(jointCount);
+    expect(model.skeletons[0]?.rootJointIds).toEqual(["joint-0"]);
+  });
+
+  it("reuses mesh and accessor evidence across bounded blend-shape validation", async () => {
+    const input = rigidDocument();
+    const vertexCount = 4_096;
+    const bytes = new Uint8Array(vertexCount * 12);
+    const view = new DataView(bytes.buffer);
+    [-1, 0, -1, 1, 2, 1].forEach((value, index) => view.setFloat32(index * 4, value, true));
+    const contentHash = sha256(bytes);
+    input.resources = [{
+      id: "buffer-main",
+      kind: "buffer",
+      contentHash,
+      byteLength: bytes.byteLength,
+      mimeType: "application/octet-stream",
+      payload: new Blob([bytes], { type: "application/octet-stream" }),
+    }];
+    input.accessors = [{
+      id: "positions",
+      resourceId: "buffer-main",
+      byteOffset: 0,
+      count: vertexCount,
+      componentType: "f32",
+      elementType: "vec3",
+      min: [-1, 0, -1],
+      max: [1, 2, 1],
+    }];
+    (input.provenance as Record<string, unknown>).sourceContentHash = contentHash;
+    const primitiveCount = 1_024;
+    const primitiveIds = Array.from({ length: primitiveCount }, (_entry, index) => `primitive-${String(index)}`);
+    (input.meshes as Array<Record<string, unknown>>)[0]!.primitives = primitiveIds.map((id) => ({
+      id,
+      topology: "points",
+      attributes: [{ semantic: "POSITION", accessorId: "positions" }],
+    }));
+    const shapeCount = 1_000;
+    input.blendShapes = Array.from({ length: shapeCount }, (_entry, index) => ({
+      id: `shape-${String(index)}`,
+      meshId: "mesh-main",
+      deltas: [{ primitiveId: primitiveIds[index % primitiveCount], positionAccessorId: "positions" }],
+      sourceMetadata: {},
+    }));
+
+    const model = await create(input);
+    expect(model.blendShapes).toHaveLength(shapeCount);
+    expect(model.meshes[0]?.primitives).toHaveLength(primitiveCount);
   });
 
   it("requires sync callers to preserve verified resource identity while allowing structural validation", async () => {

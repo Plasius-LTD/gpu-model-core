@@ -186,6 +186,30 @@ export function validDocument(): Record<string, unknown> {
   };
 }
 
+/** Minimal rigid geometry document for aggregate-work regression fixtures. */
+export function rigidDocument(): Record<string, unknown> {
+  const input = validDocument();
+  input.roots = ["node-root"];
+  input.nodes = [{ id: "node-root", children: [], meshId: "mesh-main", localMatrix: IDENTITY_MATRIX }];
+  input.resources = [(input.resources as unknown[])[0]!];
+  input.accessors = [(input.accessors as Array<Record<string, unknown>>).find(({ id }) => id === "positions")!];
+  input.meshes = [{
+    id: "mesh-main",
+    primitives: [{ id: "primitive-main", topology: "points", attributes: [{ semantic: "POSITION", accessorId: "positions" }] }],
+  }];
+  input.materials = [];
+  input.textures = [];
+  input.skeletons = [];
+  input.joints = [];
+  input.skins = [];
+  input.blendShapes = [];
+  input.animations = [];
+  input.analyticGeometry = [];
+  input.diagnostics = [];
+  input.metadata = {};
+  return input;
+}
+
 export async function createValidGpuModelDocument(): Promise<GpuModelDocument> {
   return createAndVerifyGpuModelDocument(validDocument(), new FixtureVerificationPort());
 }

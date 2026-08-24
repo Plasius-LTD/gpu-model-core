@@ -26,6 +26,8 @@ export const GPU_MODEL_DOCUMENT_LIMITS = Object.freeze({
   joints: 65_536,
   skins: 4_096,
   blendShapes: 65_536,
+  blendShapeDeltas: 262_144,
+  blendShapeAccessorReferences: 786_432,
   animations: 4_096,
   analyticGeometry: 4_096,
   diagnostics: 4_096,
@@ -496,6 +498,7 @@ const RELATIVE_PATH = /^(?!\/)(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*\\)(?![a-z][a-z0-9+
 const FILE_NAME = /^(?!\.{1,2}$)(?!.*[\\/]).{1,512}$/u;
 const GPU_FLOAT_MAX = 3.402_823_466_385_288_6e38;
 const EPSILON = 1e-5;
+const BOUNDS_ABSOLUTE_EPSILON = 1e-5;
 const COMPONENT_BYTES: Readonly<Record<GpuModelAccessorComponentType, number>> = Object.freeze({
   i8: 1, u8: 1, i16: 2, u16: 2, u32: 4, f32: 4,
 });
@@ -547,6 +550,8 @@ interface DocumentBudget {
   animationSamplers: number;
   animationChannels: number;
   animationValues: number;
+  blendShapeDeltas: number;
+  blendShapeAccessorReferences: number;
   geometryIndexElements: number;
   geometryWorldAccessorInstances: number;
   geometryWorldVertices: number;
@@ -1384,6 +1389,14 @@ function parseBlendShapeDelta(value: unknown, path: string): GpuModelBlendShapeD
 function parseBlendShape(value: unknown, path: string, budget: DocumentBudget): GpuModelBlendShape {
   const record = readRecord(value, path, ["id", "meshId", "name", "defaultWeight", "deltas", "sourceMetadata"]);
   const deltaInput = readArray(requireKey(record, "deltas", path), `${path}.deltas`, GPU_MODEL_DOCUMENT_LIMITS.primitives, 1);
+  consumeBudget(
+    budget,
+    "blendShapeDeltas",
+    deltaInput.length,
+    GPU_MODEL_DOCUMENT_LIMITS.blendShapeDeltas,
+    `${path}.deltas`,
+    "blend-shape delta",
+  );
   const deltas = Object.freeze(deltaInput.map((entry, index) => parseBlendShapeDelta(entry, `${path}.deltas[${index}]`)));
   ensureUnique(deltas.map(({ primitiveId }) => primitiveId), `${path}.deltas`, "duplicate blend-shape primitive delta");
   const output: Record<string, unknown> = {
@@ -1535,13 +1548,13 @@ function transformPosition(matrix: GpuModelMatrix4, position: readonly number[])
 }
 
 interface SceneValidation {
-  readonly parentByNode: ReadonlyMap<string, string | undefined>;
   readonly worldByNode: ReadonlyMap<string, GpuModelMatrix4>;
+  readonly ancestryEntryByNode: ReadonlyMap<string, number>;
+  readonly ancestryExitByNode: ReadonlyMap<string, number>;
 }
 
 function validateScene(roots: readonly string[], nodes: readonly GpuModelNode[], nodeIndex: ReadonlyMap<string, GpuModelNode>): SceneValidation {
   ensureUnique(roots, "$.roots", "duplicate root node");
-  const parentByNode = new Map<string, string | undefined>(nodes.map(({ id }) => [id, undefined]));
   const parentCounts = new Map(nodes.map(({ id }) => [id, 0]));
   for (let nodeIndexValue = 0; nodeIndexValue < nodes.length; nodeIndexValue += 1) {
     const node = nodes[nodeIndexValue]!;
@@ -1551,7 +1564,6 @@ function validateScene(roots: readonly string[], nodes: readonly GpuModelNode[],
       const parentCount = parentCounts.get(childId)! + 1;
       if (parentCount > 1) return fail("invalid-reference", `$.nodes[${nodeIndexValue}].children[${childIndex}]`, "node cannot have more than one parent");
       parentCounts.set(childId, parentCount);
-      parentByNode.set(childId, node.id);
     }
   }
   const rootSet = new Set(roots);
@@ -1576,19 +1588,40 @@ function validateScene(roots: readonly string[], nodes: readonly GpuModelNode[],
     }
   }
   if (worldByNode.size !== nodes.length) return fail("graph-cycle", "$.nodes", "scene graph contains a cycle or unreachable node");
-  return { parentByNode, worldByNode };
+  const ancestryEntryByNode = new Map<string, number>();
+  const ancestryExitByNode = new Map<string, number>();
+  const traversal = roots.slice().reverse().map((id) => ({ id, exiting: false }));
+  let timestamp = 0;
+  while (traversal.length > 0) {
+    const current = traversal.pop()!;
+    if (current.exiting) {
+      ancestryExitByNode.set(current.id, timestamp);
+      timestamp += 1;
+      continue;
+    }
+    ancestryEntryByNode.set(current.id, timestamp);
+    timestamp += 1;
+    traversal.push({ id: current.id, exiting: true });
+    const node = requireReference(nodeIndex, current.id, "$.nodes", "node");
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      traversal.push({ id: node.children[index]!, exiting: false });
+    }
+  }
+  if (ancestryExitByNode.size !== nodes.length) return fail("graph-cycle", "$.nodes", "scene ancestry traversal is incomplete");
+  return { worldByNode, ancestryEntryByNode, ancestryExitByNode };
 }
 
-function isAncestor(parentByNode: ReadonlyMap<string, string | undefined>, possibleAncestor: string, nodeId: string): boolean {
-  let cursor = parentByNode.get(nodeId);
-  const visited = new Set<string>();
-  while (cursor !== undefined) {
-    if (cursor === possibleAncestor) return true;
-    if (visited.has(cursor)) return false;
-    visited.add(cursor);
-    cursor = parentByNode.get(cursor);
-  }
-  return false;
+function isAncestor(scene: SceneValidation, possibleAncestor: string, nodeId: string): boolean {
+  const ancestorEntry = scene.ancestryEntryByNode.get(possibleAncestor);
+  const ancestorExit = scene.ancestryExitByNode.get(possibleAncestor);
+  const nodeEntry = scene.ancestryEntryByNode.get(nodeId);
+  const nodeExit = scene.ancestryExitByNode.get(nodeId);
+  return ancestorEntry !== undefined
+    && ancestorExit !== undefined
+    && nodeEntry !== undefined
+    && nodeExit !== undefined
+    && ancestorEntry < nodeEntry
+    && nodeExit < ancestorExit;
 }
 
 function validateAttributeAccessor(semantic: string, accessor: GpuModelAccessor, path: string): void {
@@ -1716,7 +1749,8 @@ function actualAccessorBounds(reader: AccessorReader, evidence: AccessorPayloadE
 
 function assertBoundsEqual(actual: GpuModelBounds, declared: GpuModelBounds, path: string): void {
   for (let component = 0; component < 3; component += 1) {
-    if (!almostEqual(actual.min[component]!, declared.min[component]!) || !almostEqual(actual.max[component]!, declared.max[component]!)) {
+    if (Math.abs(actual.min[component]! - declared.min[component]!) > BOUNDS_ABSOLUTE_EPSILON
+      || Math.abs(actual.max[component]! - declared.max[component]!) > BOUNDS_ABSOLUTE_EPSILON) {
       return fail("invalid-reference", path, "declared bounds do not match byte-verified POSITION data");
     }
   }
@@ -1823,6 +1857,23 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
     }
   }
 
+  interface MeshValidationEvidence {
+    readonly primitiveIds: ReadonlySet<string>;
+    readonly positionReaders: readonly AccessorReader[];
+  }
+  const meshEvidenceById = new Map<string, MeshValidationEvidence>();
+  for (const mesh of document.meshes) {
+    const primitiveIds = new Set<string>();
+    const positionIds = new Set<string>();
+    for (const primitive of mesh.primitives) {
+      primitiveIds.add(primitive.id);
+      positionIds.add(requireReference(primitiveById, primitive.id, `$.meshes.${mesh.id}`, "primitive").position.id);
+    }
+    const positionReaders = Object.freeze([...positionIds].map((positionId) =>
+      requireReference(readers, positionId, `$.meshes.${mesh.id}`, "POSITION reader")));
+    meshEvidenceById.set(mesh.id, Object.freeze({ primitiveIds, positionReaders }));
+  }
+
   const worldGeometry: Array<{
     readonly nodeIndex: number;
     readonly world: GpuModelMatrix4;
@@ -1833,11 +1884,10 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
     if (node.skinId && !node.meshId) return fail("invalid-reference", `$.nodes[${nodeIndex}].skinId`, "a skinned node must also reference a mesh");
     if (node.skinId) requireReference(skins, node.skinId, `$.nodes[${nodeIndex}].skinId`, "skin");
     if (!node.meshId) continue;
-    const mesh = requireReference(meshes, node.meshId, `$.nodes[${nodeIndex}].meshId`, "mesh");
+    requireReference(meshes, node.meshId, `$.nodes[${nodeIndex}].meshId`, "mesh");
+    const meshEvidence = requireReference(meshEvidenceById, node.meshId, `$.nodes[${nodeIndex}].meshId`, "mesh validation evidence");
     const world = requireReference(scene.worldByNode, node.id, `$.nodes[${nodeIndex}]`, "world transform");
-    const positionIds = new Set(mesh.primitives.map((primitive) => primitiveById.get(primitive.id)!.position.id));
-    const positionReaders = Object.freeze([...positionIds].map((positionId) => {
-      const reader = requireReference(readers, positionId, `$.nodes[${nodeIndex}].meshId`, "POSITION reader");
+    const positionReaders = Object.freeze(meshEvidence.positionReaders.map((reader) => {
       consumeBudget(
         budget,
         "geometryWorldAccessorInstances",
@@ -1903,24 +1953,30 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
   }
 
   const skeletonForJoint = new Map<string, string>();
+  const jointIdsBySkeleton = new Map<string, ReadonlySet<string>>();
   for (let skeletonIndex = 0; skeletonIndex < document.skeletons.length; skeletonIndex += 1) {
     const skeleton = document.skeletons[skeletonIndex]!;
-    const expectedRoots: string[] = [];
+    const skeletonJointIds = new Set(skeleton.jointIds);
+    const skeletonJointNodes = new Set<string>();
+    const expectedRoots = new Set<string>();
+    jointIdsBySkeleton.set(skeleton.id, skeletonJointIds);
     for (let jointIndex = 0; jointIndex < skeleton.jointIds.length; jointIndex += 1) {
       const jointId = skeleton.jointIds[jointIndex]!;
       const joint = requireReference(joints, jointId, `$.skeletons[${skeletonIndex}].jointIds[${jointIndex}]`, "joint");
       if (skeletonForJoint.has(jointId)) return fail("invalid-reference", `$.skeletons[${skeletonIndex}].jointIds[${jointIndex}]`, "joint cannot belong to more than one skeleton");
       skeletonForJoint.set(jointId, skeleton.id);
       requireReference(nodes, joint.nodeId, `$.joints.${joint.id}.nodeId`, "node");
-      if (joint.parentJointId === undefined) expectedRoots.push(joint.id);
+      if (skeletonJointNodes.has(joint.nodeId)) return fail("duplicate-id", `$.skeletons[${skeletonIndex}].jointIds`, `duplicate joint node: ${joint.nodeId}`);
+      skeletonJointNodes.add(joint.nodeId);
+      if (joint.parentJointId === undefined) expectedRoots.add(joint.id);
     }
-    ensureUnique(document.joints.filter(({ id }) => skeleton.jointIds.includes(id)).map(({ nodeId }) => nodeId), `$.skeletons[${skeletonIndex}].jointIds`, "duplicate joint node");
-    if (expectedRoots.length !== skeleton.rootJointIds.length || expectedRoots.some((id) => !skeleton.rootJointIds.includes(id))) {
+    const declaredRoots = new Set(skeleton.rootJointIds);
+    if (expectedRoots.size !== declaredRoots.size || [...expectedRoots].some((id) => !declaredRoots.has(id))) {
       return fail("invalid-reference", `$.skeletons[${skeletonIndex}].rootJointIds`, "rootJointIds must exactly identify parentless skeleton joints");
     }
     for (let rootIndex = 0; rootIndex < skeleton.rootJointIds.length; rootIndex += 1) {
       const rootJoint = requireReference(joints, skeleton.rootJointIds[rootIndex]!, `$.skeletons[${skeletonIndex}].rootJointIds[${rootIndex}]`, "joint");
-      if (!skeleton.jointIds.includes(rootJoint.id)) return fail("invalid-reference", `$.skeletons[${skeletonIndex}].rootJointIds[${rootIndex}]`, "root joint is not a member of the skeleton");
+      if (!skeletonJointIds.has(rootJoint.id)) return fail("invalid-reference", `$.skeletons[${skeletonIndex}].rootJointIds[${rootIndex}]`, "root joint is not a member of the skeleton");
       requireReference(scene.worldByNode, rootJoint.nodeId, `$.joints.${rootJoint.id}.nodeId`, "scene node");
     }
   }
@@ -1931,7 +1987,7 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
     if (joint.parentJointId) {
       const parent = requireReference(joints, joint.parentJointId, `$.joints[${jointIndex}].parentJointId`, "joint");
       if (skeletonForJoint.get(parent.id) !== skeletonForJoint.get(joint.id)) return fail("invalid-reference", `$.joints[${jointIndex}].parentJointId`, "parent joint must belong to the same skeleton");
-      if (!isAncestor(scene.parentByNode, parent.nodeId, node.id)) return fail("invalid-reference", `$.joints[${jointIndex}].parentJointId`, "parent joint node must be an ancestor of the child joint node");
+      if (!isAncestor(scene, parent.nodeId, node.id)) return fail("invalid-reference", `$.joints[${jointIndex}].parentJointId`, "parent joint node must be an ancestor of the child joint node");
     }
   }
 
@@ -1946,9 +2002,10 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
   for (let skinIndex = 0; skinIndex < document.skins.length; skinIndex += 1) {
     const skin = document.skins[skinIndex]!;
     const skeleton = requireReference(skeletons, skin.skeletonId, `$.skins[${skinIndex}].skeletonId`, "skeleton");
+    const skeletonJointIds = requireReference(jointIdsBySkeleton, skeleton.id, `$.skins[${skinIndex}].skeletonId`, "skeleton joint set");
     for (let jointIndex = 0; jointIndex < skin.jointIds.length; jointIndex += 1) {
       const joint = requireReference(joints, skin.jointIds[jointIndex]!, `$.skins[${skinIndex}].jointIds[${jointIndex}]`, "joint");
-      if (!skeleton.jointIds.includes(joint.id)) return fail("invalid-reference", `$.skins[${skinIndex}].jointIds[${jointIndex}]`, "skin joint is not a member of its skeleton");
+      if (!skeletonJointIds.has(joint.id)) return fail("invalid-reference", `$.skins[${skinIndex}].jointIds[${jointIndex}]`, "skin joint is not a member of its skeleton");
       if (joint.inverseBindMatrix && !matrixAlmostEqual(joint.inverseBindMatrix, skin.inverseBindMatrices[jointIndex]!)) {
         return fail("invalid-reference", `$.skins[${skinIndex}].inverseBindMatrices[${jointIndex}]`, "skin matrix does not match authored joint inverse bind matrix");
       }
@@ -1957,7 +2014,9 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
     if (!usedMeshes || usedMeshes.size === 0) return fail("invalid-reference", `$.skins[${skinIndex}]`, "skin must be linked from a node that also references a mesh");
     const expectedPrimitiveIds = new Set<string>();
     for (const meshId of usedMeshes) {
-      for (const primitive of requireReference(meshes, meshId, `$.skins[${skinIndex}]`, "mesh").primitives) expectedPrimitiveIds.add(primitive.id);
+      requireReference(meshes, meshId, `$.skins[${skinIndex}]`, "mesh");
+      const meshEvidence = requireReference(meshEvidenceById, meshId, `$.skins[${skinIndex}]`, "mesh validation evidence");
+      for (const primitiveId of meshEvidence.primitiveIds) expectedPrimitiveIds.add(primitiveId);
     }
     const weightSetByPrimitive = new Map(skin.weightSets.map((weightSet) => [weightSet.primitiveId, weightSet]));
     if (weightSetByPrimitive.size !== expectedPrimitiveIds.size || [...expectedPrimitiveIds].some((id) => !weightSetByPrimitive.has(id))) {
@@ -2012,23 +2071,28 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
   for (let shapeIndex = 0; shapeIndex < document.blendShapes.length; shapeIndex += 1) {
     const shape = document.blendShapes[shapeIndex]!;
     const mesh = requireReference(meshes, shape.meshId, `$.blendShapes[${shapeIndex}].meshId`, "mesh");
-    const meshPrimitives = new Set(mesh.primitives.map(({ id }) => id));
+    const meshEvidence = requireReference(meshEvidenceById, mesh.id, `$.blendShapes[${shapeIndex}].meshId`, "mesh validation evidence");
     for (let deltaIndex = 0; deltaIndex < shape.deltas.length; deltaIndex += 1) {
       const delta = shape.deltas[deltaIndex]!;
       const path = `$.blendShapes[${shapeIndex}].deltas[${deltaIndex}]`;
-      if (!meshPrimitives.has(delta.primitiveId)) return fail("invalid-reference", `${path}.primitiveId`, "blend-shape primitive is not part of its mesh");
+      if (!meshEvidence.primitiveIds.has(delta.primitiveId)) return fail("invalid-reference", `${path}.primitiveId`, "blend-shape primitive is not part of its mesh");
       const base = requireReference(primitiveById, delta.primitiveId, path, "primitive").position;
-      for (const [key, components] of [["positionAccessorId", 3], ["normalAccessorId", 3], ["tangentAccessorId", 3]] as const) {
+      for (const key of ["positionAccessorId", "normalAccessorId", "tangentAccessorId"] as const) {
         const accessorId = delta[key];
         if (!accessorId) continue;
+        consumeBudget(
+          budget,
+          "blendShapeAccessorReferences",
+          1,
+          GPU_MODEL_DOCUMENT_LIMITS.blendShapeAccessorReferences,
+          `${path}.${key}`,
+          "blend-shape accessor reference",
+        );
         const accessor = requireReference(accessors, accessorId, `${path}.${key}`, "accessor");
-        if (accessor.componentType !== "f32" || accessor.elementType !== (components === 3 ? "vec3" : "vec4") || accessor.count !== base.count || accessor.normalized === true) {
+        if (accessor.componentType !== "f32" || accessor.elementType !== "vec3" || accessor.count !== base.count || accessor.normalized === true) {
           return fail("invalid-reference", `${path}.${key}`, "blend-shape accessor has an invalid representation");
         }
-        const reader = requireReference(readers, accessor.id, `${path}.${key}`, "accessor reader");
-        for (let vertex = 0; vertex < accessor.count; vertex += 1) {
-          if (reader.read(vertex).some((entry) => !Number.isFinite(entry))) return fail("invalid-value", `${path}.${key}`, "blend-shape payload contains a non-finite value");
-        }
+        requireReference(payloadEvidence, accessor.id, `${path}.${key}`, "verified accessor payload evidence");
       }
     }
   }
@@ -2129,6 +2193,8 @@ function parseGpuModelDocument(value: unknown): GpuModelDocument {
     animationSamplers: 0,
     animationChannels: 0,
     animationValues: 0,
+    blendShapeDeltas: 0,
+    blendShapeAccessorReferences: 0,
     geometryIndexElements: 0,
     geometryWorldAccessorInstances: 0,
     geometryWorldVertices: 0,
@@ -2459,6 +2525,16 @@ function triangleBounds(positions: GpuModelTriangleVec3): GpuModelBounds {
   return { min, max };
 }
 
+function assertStaticDemoTriangleCoordinates(positions: GpuModelTriangleVec3, path: string): void {
+  for (let corner = 0; corner < positions.length; corner += 1) {
+    for (let component = 0; component < positions[corner]!.length; component += 1) {
+      if (Math.abs(positions[corner]![component]!) > GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES) {
+        return fail("limit-exceeded", path, "static demo triangle coordinate exceeds the fixed PVOX ceiling");
+      }
+    }
+  }
+}
+
 function staticDemoMaterial(material: GpuModelMaterial): GpuModelStaticDemoMaterial {
   if (material.workflow !== "metallic-roughness" && material.workflow !== "unlit") {
     return fail("unsupported-feature", `$.materials.${material.id}.workflow`, "static demo supports metallic-roughness and unlit materials only");
@@ -2603,6 +2679,7 @@ export async function createGpuModelStaticDemoCompilerInput(
         });
         if (determinant < 0) [sourceIndices[1], sourceIndices[2]] = [sourceIndices[2]!, sourceIndices[1]!];
         const positions = Object.freeze(sourceIndices.map((index) => Object.freeze(transformPosition(world, positionReader.read(index))))) as unknown as GpuModelTriangleVec3;
+        assertStaticDemoTriangleCoordinates(positions, `${path}.triangles[${triangleIndex}]`);
         const fallback = faceNormal(positions, `${path}.triangles[${triangleIndex}]`);
         const normals = Object.freeze(sourceIndices.map((index) => normalReader
           ? transformNormal(world, normalReader.read(index), determinant, fallback)

@@ -42,7 +42,8 @@ Object keys are lexically sorted and semantic array order remains significant.
    unsupported-attribute content.
 5. Enforce caller-tightenable but non-raiseable resource and scene limits.
 6. Resolve only byte-verified accessors and canonical scene transforms.
-7. Correct reflected winding, transform authored normals, and reject singular
+7. Check every computed world coordinate against the fixed PVOX ceiling,
+   correct reflected winding, transform authored normals, and reject singular
    transforms, incomplete triangle groups, and degenerate triangles.
 8. Hash the canonical document and freeze the compiler projection.
 

@@ -43,8 +43,12 @@ structured clone loses the brand and must be reverified.
 Accessor min/max, geometry finiteness, primitive indices, skin joint indices and
 weights, animation sample values, and canonical world-space bounds are checked
 against verified bytes. Aggregate index and instanced-world traversal work is
-bounded, while accessor evidence and repeated position/index reads are cached
-per validation. A textured material may be used only by primitives that carry
+bounded, while accessor evidence, per-mesh primitive/position indexes, and
+repeated position/index reads are cached per validation. Scene ancestry uses a
+single linear-time interval index, so rig validation has constant-time ancestry
+and set-membership checks. Blend-shape deltas and accessor references have
+document-wide ceilings and reuse verified accessor evidence. A textured
+material may be used only by primitives that carry
 its selected `TEXCOORD_n` attribute. Node and inverse-bind matrices are affine.
 This keeps document validity bound to the exact payload rather than to
 attacker-controlled metadata claims.
@@ -61,7 +65,8 @@ The projection requires callers to pass a positive remote evaluation of
 `asset.pipeline.pvox-models.enabled`. It proves the advertised floor-centred
 coordinate promise from world bounds, enforces the PVOX-aligned non-raiseable
 absolute coordinate ceiling of 1,048,576 metres plus derived extent/diagonal
-ceilings, applies strict demo limits, and rejects
+ceilings, and checks every computed world-triangle coordinate independently.
+Security bounds use tight absolute comparison. The projection applies strict demo limits and rejects
 dynamic, textured, non-triangle, singular-transform, or otherwise unsupported
 documents before `@plasius/gpu-model-voxel` can compile them.
 
