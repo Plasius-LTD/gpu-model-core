@@ -15,11 +15,18 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Bootstrapped the dedicated package repository from the schema baseline.
   - Added the gpu.model.conversion.enabled rollout reference and package smoke test.
   - Added Project-tracked Tasks for the canonical schema, diagnostics, resource graph, and adapter registry implementation boundaries.
+  - Added the versioned, renderer-neutral `GpuModelDocument` contract with complete material/texture fidelity, distinct skeleton/joint/skin graphs, authored vertex weights, blend shapes, animation timing/source metadata, analytic placeholders, and provenance.
+  - Added injected streaming resource verification, private resource/document attestation, asynchronous raw-document construction, and a non-narrowing synchronous construction probe.
+  - Added deterministic canonical whole-document encoding and SHA-256 identity over privately verified resource identities.
+  - Added the flag-gated `plasius.gpu-model-static-demo/1` compiler projection with bounded world triangles, fixed surface materials, safe provenance evidence, and explicit normalization proof for the ChatGPT-to-PVOX GPU Demo slice.
 
 - **Changed**
   - Bound npm publication to the exact prepared `main` commit after successful push-triggered CI.
   - Made release-only Codecov coverage uploads best-effort; CI coverage gates remain independent while Codecov quota or service failures emit warnings without blocking publication.
   - Forwarded an explicitly selected first-publication bootstrap policy from the `prepare` dispatch to the exact-commit `publish` dispatch while preserving token-free defaults and prohibiting automatic credential fallback.
+  - Raised all package coverage gates to at least 80% and included the canonical `tests/` tree in TypeScript validation.
+  - Bound accessor min/max, indices, skin weights, animation values, and world-space document bounds to privately verified resource bytes.
+  - Kept the Task #13 demo compiler projection additive to the Task #3 general canonical document and fail-closed for dynamic, textured, non-triangle, over-budget, singular, or non-floor-centred inputs.
 
 - **Added**
   - (placeholder)
@@ -35,6 +42,8 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Required an npm `E404` package-absence result before the one-time `0.1.0` credential may be used; registry and transport failures now fail closed.
   - Pinned patched `brace-expansion`, `nanoid`, and `postcss` transitive build dependencies so the complete release toolchain passes the high-severity audit gate.
   - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
+  - Updated transitive development-tool overrides for `brace-expansion` and `nanoid` to patched releases after dependency advisory review; runtime dependencies remain unaffected.
+  - Added fail-closed resource/image budgets, MIME and image inspection, affine-matrix enforcement, and control/bidirectional-text escaping for bounded validation errors.
   - (placeholder)
 
 ## [1.2.17] - 2026-06-28
