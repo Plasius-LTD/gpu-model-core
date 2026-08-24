@@ -24,12 +24,18 @@ denied.
 npm cannot bind this package to its trusted publisher before the package exists.
 The initial `0.1.0` publication therefore has a temporary, explicitly selected
 `bootstrap_first_publish` path inside the same `cd.yml` and `production`
-boundary. It reuses the immutable artifact and exact-main/CI checks, refuses any
-other version, and refuses the credential if the package name already exists.
+boundary. The operator selects it on the `prepare` dispatch and `queue_publish`
+forwards that exact boolean to the exact-commit `publish` dispatch; the default
+remains false. It reuses the immutable artifact and exact-main/CI checks,
+refuses any other version, and requires an npm `E404` response proving the
+package name is absent. Registry or transport errors fail closed instead of
+being interpreted as absence.
 The short-lived credential is materialized only in a mode-`0600` runner-temporary
 user configuration and erased on step exit. This is not a fallback: the
-credential, environment secret, and bootstrap path are removed after `0.1.0`,
-and a later patch release must prove OIDC before release readiness is complete.
+OIDC step and bootstrap step are mutually exclusive, and OIDC failure cannot
+activate the credential. The credential, environment secret, and bootstrap path
+are removed after `0.1.0`, and a later patch release must prove OIDC before
+release readiness is complete.
 
 ## Consequences
 

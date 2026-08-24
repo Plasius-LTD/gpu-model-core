@@ -129,6 +129,7 @@ jobs:
           EXPECTED_SHA: ${{ needs.prepare_release.outputs.commit_sha }}
           RELEASE_TAG: ${{ needs.prepare_release.outputs.tag }}
           PREID: ${{ needs.prepare_release.outputs.effective_preid }}
+          BOOTSTRAP_FIRST_PUBLISH: ${{ inputs.bootstrap_first_publish }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -144,6 +145,7 @@ jobs:
             --arg sha "${EXPECTED_SHA}" \
             --arg tag "${RELEASE_TAG}" \
             --arg preid "${PREID}" \
+            --arg bootstrap_first_publish "${BOOTSTRAP_FIRST_PUBLISH}" \
             '{
               "ref": "main",
               "inputs": {
@@ -152,14 +154,14 @@ jobs:
                 "preid": $preid,
                 "expected_commit_sha": $sha,
                 "release_tag": $tag,
-                "bootstrap_first_publish": "false"
+                "bootstrap_first_publish": $bootstrap_first_publish
               }
             }' |
             gh api -X POST \
               "repos/${GITHUB_REPOSITORY}/actions/workflows/cd.yml/dispatches" \
               --input -
 
-          echo "Queued tokenless publication of ${RELEASE_TAG} from ${EXPECTED_SHA}."
+          echo "Queued publication of ${RELEASE_TAG} from ${EXPECTED_SHA} with the explicitly selected credential policy."
 
   validate_and_pack:
     if: inputs.phase == 'publish'
@@ -926,8 +928,26 @@ jobs:
             echo "First-publication bootstrap is restricted to version 0.1.0." >&2
             exit 1
           fi
-          if npm view "${PACKAGE_NAME}" name --registry https://registry.npmjs.org --prefer-online >/dev/null 2>&1; then
+
+          PACKAGE_LOOKUP="${RUNNER_TEMP}/npm-bootstrap-package-lookup-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          cleanup() {
+            if [ -f "${PACKAGE_LOOKUP}" ]; then
+              : > "${PACKAGE_LOOKUP}"
+              rm -f "${PACKAGE_LOOKUP}"
+            fi
+          }
+          trap cleanup EXIT
+
+          if npm view "${PACKAGE_NAME}" name \
+            --registry https://registry.npmjs.org \
+            --prefer-online \
+            --loglevel=error \
+            >"${PACKAGE_LOOKUP}" 2>&1; then
             echo "${PACKAGE_NAME} already exists; the one-time bootstrap credential is forbidden." >&2
+            exit 1
+          fi
+          if ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)|404 Not Found' "${PACKAGE_LOOKUP}"; then
+            echo "Unable to prove that the package is absent from npm; refusing the one-time bootstrap credential." >&2
             exit 1
           fi
 
