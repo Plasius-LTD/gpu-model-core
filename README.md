@@ -58,11 +58,20 @@ metadata survive the canonical boundary.
 
 Verification applies non-raiseable defaults of 100 MiB per resource, 164 MiB
 aggregate resources, 64 MiB aggregate images, and 4096 pixels per image axis.
-It verifies detected MIME and image dimensions before hashing that image. The
-document validator then reads the private verified byte snapshot to reject
+It verifies detected MIME and image dimensions before hashing that image, then
+constructs the returned `Blob` from the exact digest-verified byte snapshot.
+One internal deadline signal is propagated to both worker-port calls and every
+stream chunk. Re-verifying an attested resource or document is idempotent, but
+still honours cancellation and re-applies any tighter byte/image/aggregate
+limits using retained inspection evidence.
+
+The document validator then reads only the private snapshot to reject
 non-finite accessor data, false min/max claims, out-of-range indices and skin
-joint indices, mismatched weights, and bounds that do not match canonical
-`POSITION` bytes under affine world transforms.
+joint indices, mismatched weights, texture bindings whose required
+`TEXCOORD_n` is absent from a material-using primitive, and bounds that do not
+match canonical `POSITION` bytes under affine world transforms. Payload,
+index, and instanced world-geometry work has aggregate ceilings; accessor
+evidence and repeated position/index scans are cached within one validation.
 
 `createGpuModelDocument` remains available for trusted composition code that
 already holds privately verified resources. `isGpuModelDocument` narrows only
@@ -100,7 +109,9 @@ compilerInput.worldTriangles; // verified positions, normals, bounds and regions
 
 The profile accepts at most 200,000 explicit world-space triangles, 4,096
 nodes, 16,384 primitives, 4,096 fixed-factor materials, and 16 MiB of verified
-buffer resources. It accepts only rigid `triangles`, opaque texture-free
+buffer resources. Every world-space coordinate additionally has a fixed,
+non-raiseable magnitude ceiling of 1,048,576 metres, with consistent axis
+extent and diagonal bounds. It accepts only rigid `triangles`, opaque texture-free
 metallic-roughness or unlit materials, invertible transforms, and geometry
 whose verified bounds prove metre/Y-up/-Z-forward/floor-centred normalization.
 Skins, animation, morphs, analytic geometry, images, texture bindings, custom

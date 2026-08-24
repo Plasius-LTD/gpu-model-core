@@ -240,6 +240,13 @@ describe("canonical GPU model document", () => {
     ["binding usage mismatch", (input: Record<string, unknown>) => { ((((input.materials as Array<Record<string, unknown>>)[0]!.textures as Record<string, unknown>).baseColor as Record<string, unknown>)).intendedUsage = "normal"; }],
     ["binding colour mismatch", (input: Record<string, unknown>) => { ((((input.materials as Array<Record<string, unknown>>)[0]!.textures as Record<string, unknown>).baseColor as Record<string, unknown>)).colorSpace = "linear"; }],
     ["binding sampler mismatch", (input: Record<string, unknown>) => { ((((input.materials as Array<Record<string, unknown>>)[0]!.textures as Record<string, unknown>).baseColor as Record<string, unknown>)).samplerId = "other"; }],
+    ["binding texture coordinate set missing from primitive", (input: Record<string, unknown>) => { ((((input.materials as Array<Record<string, unknown>>)[0]!.textures as Record<string, unknown>).baseColor as Record<string, unknown>)).texCoordSet = 1; }],
+    ["default texture coordinate set missing from primitive", (input: Record<string, unknown>) => {
+      const binding = (((input.materials as Array<Record<string, unknown>>)[0]!.textures as Record<string, unknown>).baseColor as Record<string, unknown>);
+      delete binding.texCoordSet;
+      const primitive = ((input.meshes as Array<Record<string, unknown>>)[0]!.primitives as Array<Record<string, unknown>>)[0]!;
+      primitive.attributes = (primitive.attributes as Array<Record<string, unknown>>).filter(({ semantic }) => semantic !== "TEXCOORD_0");
+    }],
     ["missing analytic source", (input: Record<string, unknown>) => { (input.analyticGeometry as Array<Record<string, unknown>>)[0]!.sourceResourceId = "missing-resource"; }],
     ["analytic image source", (input: Record<string, unknown>) => { (input.analyticGeometry as Array<Record<string, unknown>>)[0]!.sourceResourceId = "image-main"; }],
   ])("rejects invalid scene/resource/reference contracts: %s", async (_name, mutate) => {

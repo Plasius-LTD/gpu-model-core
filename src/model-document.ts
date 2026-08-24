@@ -37,6 +37,9 @@ export const GPU_MODEL_DOCUMENT_LIMITS = Object.freeze({
   animationSamplers: 65_536,
   animationChannels: 262_144,
   animationValues: 8_000_000,
+  geometryIndexElements: 16_000_000,
+  geometryWorldAccessorInstances: 262_144,
+  geometryWorldVertices: 16_000_000,
   identifierLength: 128,
   nameLength: 512,
   diagnosticMessageLength: 2_048,
@@ -529,6 +532,7 @@ const MATERIAL_TEXTURE_SLOTS = Object.freeze({
 
 const verifiedResources = new WeakSet<object>();
 const verifiedResourceBytes = new WeakMap<object, Uint8Array>();
+const verifiedResourceEvidence = new WeakMap<object, GpuModelResourceInspection>();
 const validatedDocuments = new WeakSet<object>();
 
 interface DocumentBudget {
@@ -543,6 +547,9 @@ interface DocumentBudget {
   animationSamplers: number;
   animationChannels: number;
   animationValues: number;
+  geometryIndexElements: number;
+  geometryWorldAccessorInstances: number;
+  geometryWorldVertices: number;
 }
 
 function fail(code: GpuModelDocumentErrorCode, path: string, detail: string): never {
@@ -752,6 +759,7 @@ function parseTransformTrs(value: unknown, path: string): GpuModelTransformTrs {
 const blobSizeGetter = Object.getOwnPropertyDescriptor(Blob.prototype, "size")!.get!;
 const blobTypeGetter = Object.getOwnPropertyDescriptor(Blob.prototype, "type")!.get!;
 const blobSlice = Blob.prototype.slice;
+const blobArrayBuffer = Blob.prototype.arrayBuffer;
 
 function intrinsicBlobSize(blob: Blob): number {
   return Reflect.apply(blobSizeGetter, blob, []) as number;
@@ -763,6 +771,10 @@ function intrinsicBlobType(blob: Blob): string {
 
 function intrinsicBlobSlice(blob: Blob, start: number, end: number, contentType?: string): Blob {
   return Reflect.apply(blobSlice, blob, contentType === undefined ? [start, end] : [start, end, contentType]) as Blob;
+}
+
+function intrinsicBlobArrayBuffer(blob: Blob): Promise<ArrayBuffer> {
+  return Reflect.apply(blobArrayBuffer, blob, []) as Promise<ArrayBuffer>;
 }
 
 function parseResourceHeader(value: unknown, path: string): GpuModelResource {
@@ -829,39 +841,116 @@ function preflightResourceBudget(resources: readonly GpuModelResource[], limits:
   }
 }
 
-function createBlobChunks(blob: Blob, chunkBytes: number, observed: { bytes: number }, snapshot?: Uint8Array): AsyncIterable<Uint8Array> {
+function assertVerifiedResourceEvidence(
+  resource: GpuModelResource,
+  limits: VerificationLimits,
+  path: string,
+): void {
+  const evidence = verifiedResourceEvidence.get(resource);
+  if (!evidence) return fail("resource-unverified", path, "verified resource inspection evidence is unavailable");
+  if (resource.kind !== "image") return;
+  const width = evidence.width;
+  const height = evidence.height;
+  if (width === undefined || height === undefined) {
+    return fail("resource-verification-failed", path, "verified image inspection evidence is incomplete");
+  }
+  if (width > limits.maxImageDimension || height > limits.maxImageDimension || width * height > limits.maxImagePixels) {
+    return fail("resource-budget-exceeded", path, "image dimension budget exceeded");
+  }
+}
+
+function cachedResourceWithinLimits(
+  resource: GpuModelResource,
+  limits: VerificationLimits,
+  path: string,
+): GpuModelResource {
+  preflightResourceBudget([resource], limits);
+  assertVerifiedResourceEvidence(resource, limits, path);
+  return resource;
+}
+
+function verificationAbortError(signal: AbortSignal, path: string): GpuModelDocumentError {
+  return signal.reason instanceof GpuModelDocumentError
+    ? signal.reason
+    : new GpuModelDocumentError("resource-verification-failed", path, "resource verification was aborted");
+}
+
+function throwIfVerificationAborted(signal: AbortSignal, path: string): void {
+  if (signal.aborted) throw verificationAbortError(signal, path);
+}
+
+function createBlobChunks(
+  blob: Blob,
+  chunkBytes: number,
+  observed: { bytes: number },
+  signal: AbortSignal,
+  path: string,
+  snapshot?: Uint8Array,
+): AsyncIterable<Uint8Array> {
   return {
     async *[Symbol.asyncIterator]() {
       const size = intrinsicBlobSize(blob);
       for (let offset = 0; offset < size; offset += chunkBytes) {
+        throwIfVerificationAborted(signal, path);
         const end = Math.min(size, offset + chunkBytes);
-        const chunk = new Uint8Array(await intrinsicBlobSlice(blob, offset, end).arrayBuffer());
+        const chunk = new Uint8Array(await intrinsicBlobArrayBuffer(intrinsicBlobSlice(blob, offset, end)));
+        throwIfVerificationAborted(signal, path);
         observed.bytes += chunk.byteLength;
         if (snapshot) snapshot.set(chunk, offset);
         yield chunk;
       }
+      throwIfVerificationAborted(signal, path);
     },
   };
 }
 
-async function withVerificationDeadline<T>(operation: Promise<T>, timeoutMs: number, signal: AbortSignal | undefined): Promise<T> {
-  if (signal?.aborted) return fail("resource-verification-failed", "$.resources", "resource verification was aborted");
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  let abortListener: (() => void) | undefined;
-  const deadline = new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => reject(new GpuModelDocumentError("resource-verification-failed", "$.resources", "resource verification deadline exceeded")), timeoutMs);
-    timeout.unref?.();
-    if (signal) {
-      abortListener = () => reject(new GpuModelDocumentError("resource-verification-failed", "$.resources", "resource verification was aborted"));
-      signal.addEventListener("abort", abortListener, { once: true });
+interface VerificationDeadline {
+  readonly signal: AbortSignal;
+  race<T>(operation: () => Promise<T> | T): Promise<T>;
+  throwIfAborted(): void;
+  dispose(): void;
+}
+
+function createVerificationDeadline(timeoutMs: number, callerSignal: AbortSignal | undefined, path: string): VerificationDeadline {
+  const controller = new AbortController();
+  const abort = (detail: string): void => {
+    if (!controller.signal.aborted) {
+      controller.abort(new GpuModelDocumentError("resource-verification-failed", path, detail));
     }
-  });
-  try {
-    return await Promise.race([operation, deadline]);
-  } finally {
-    if (timeout !== undefined) clearTimeout(timeout);
-    if (signal && abortListener) signal.removeEventListener("abort", abortListener);
-  }
+  };
+  const callerAbort = (): void => abort("resource verification was aborted");
+  if (callerSignal?.aborted) callerAbort();
+  else callerSignal?.addEventListener("abort", callerAbort, { once: true });
+  const timeout = setTimeout(() => abort("resource verification deadline exceeded"), timeoutMs);
+  timeout.unref?.();
+  return {
+    signal: controller.signal,
+    async race<T>(operation: () => Promise<T> | T): Promise<T> {
+      throwIfVerificationAborted(controller.signal, path);
+      let abortListener: (() => void) | undefined;
+      const aborted = new Promise<never>((_resolve, reject) => {
+        abortListener = () => reject(verificationAbortError(controller.signal, path));
+        controller.signal.addEventListener("abort", abortListener, { once: true });
+        if (controller.signal.aborted) abortListener();
+      });
+      try {
+        const running = Promise.resolve().then(() => {
+          throwIfVerificationAborted(controller.signal, path);
+          return operation();
+        });
+        return await Promise.race([running, aborted]);
+      } finally {
+        if (abortListener) controller.signal.removeEventListener("abort", abortListener);
+      }
+    },
+    throwIfAborted(): void {
+      throwIfVerificationAborted(controller.signal, path);
+    },
+    dispose(): void {
+      clearTimeout(timeout);
+      callerSignal?.removeEventListener("abort", callerAbort);
+    },
+  };
 }
 
 function parseInspection(value: unknown, path: string): GpuModelResourceInspection {
@@ -911,70 +1000,80 @@ async function verifyParsedResource(
   options?: GpuModelResourceVerificationOptions,
   path = "$.resource",
 ): Promise<GpuModelResource> {
-  if (verifiedResources.has(resource) && verifiedResourceBytes.has(resource)) return resource;
-  preflightResourceBudget([resource], limits);
   if (options?.signal?.aborted) return fail("resource-verification-failed", path, "resource verification was aborted");
+  if (verifiedResources.has(resource) && verifiedResourceBytes.has(resource)) {
+    return cachedResourceWithinLimits(resource, limits, path);
+  }
+  preflightResourceBudget([resource], limits);
   if (typeof port !== "object" || port === null || typeof port.inspectResource !== "function" || typeof port.digestSha256 !== "function") {
     return fail("invalid-type", "$.verificationPort", "expected digest and inspection functions");
   }
-  const context: GpuModelResourceVerificationContext = Object.freeze({
-    resourceId: resource.id,
-    kind: resource.kind,
-    declaredMimeType: resource.mimeType,
-    byteLength: resource.byteLength,
-    ...(options?.signal ? { signal: options.signal } : {}),
-  });
-  const inspectionObserved = { bytes: 0 };
-  let inspectionValue: unknown;
+  const deadline = createVerificationDeadline(limits.timeoutMs, options?.signal, path);
   try {
-    inspectionValue = await withVerificationDeadline(
-      Promise.resolve(port.inspectResource(createBlobChunks(resource.payload, limits.chunkBytes, inspectionObserved), context)),
-      limits.timeoutMs,
-      options?.signal,
-    );
-  } catch (error) {
-    if (error instanceof GpuModelDocumentError) throw error;
-    return fail("resource-verification-failed", path, "resource inspection failed");
-  }
-  if (inspectionObserved.bytes !== resource.byteLength) return fail("resource-verification-failed", path, "resource inspection did not consume the complete payload");
-  const inspection = parseInspection(inspectionValue, `${path}.inspection`);
-  if (!inspection.valid) return fail("resource-verification-failed", path, "resource inspection rejected the payload");
-  if (inspection.detectedMimeType !== resource.mimeType) return fail("resource-verification-failed", path, "detected MIME type does not match the declaration");
-  if (resource.kind === "image") {
-    const width = inspection.width;
-    const height = inspection.height;
-    if (width === undefined || height === undefined) return fail("resource-verification-failed", path, "image inspection did not report dimensions");
-    if (width > limits.maxImageDimension || height > limits.maxImageDimension || width * height > limits.maxImagePixels) {
-      return fail("resource-budget-exceeded", path, "image dimension budget exceeded");
+    const context: GpuModelResourceVerificationContext = Object.freeze({
+      resourceId: resource.id,
+      kind: resource.kind,
+      declaredMimeType: resource.mimeType,
+      byteLength: resource.byteLength,
+      signal: deadline.signal,
+    });
+    const inspectionObserved = { bytes: 0 };
+    let inspectionValue: unknown;
+    try {
+      inspectionValue = await deadline.race(() => port.inspectResource(
+        createBlobChunks(resource.payload, limits.chunkBytes, inspectionObserved, deadline.signal, path),
+        context,
+      ));
+    } catch (error) {
+      if (error instanceof GpuModelDocumentError) throw error;
+      deadline.throwIfAborted();
+      return fail("resource-verification-failed", path, "resource inspection failed");
     }
-  } else if (inspection.width !== undefined || inspection.height !== undefined) {
-    return fail("resource-verification-failed", path, "buffer inspection must not report image dimensions");
+    deadline.throwIfAborted();
+    if (inspectionObserved.bytes !== resource.byteLength) return fail("resource-verification-failed", path, "resource inspection did not consume the complete payload");
+    const inspection = parseInspection(inspectionValue, `${path}.inspection`);
+    if (!inspection.valid) return fail("resource-verification-failed", path, "resource inspection rejected the payload");
+    if (inspection.detectedMimeType !== resource.mimeType) return fail("resource-verification-failed", path, "detected MIME type does not match the declaration");
+    if (resource.kind === "image") {
+      const width = inspection.width;
+      const height = inspection.height;
+      if (width === undefined || height === undefined) return fail("resource-verification-failed", path, "image inspection did not report dimensions");
+      if (width > limits.maxImageDimension || height > limits.maxImageDimension || width * height > limits.maxImagePixels) {
+        return fail("resource-budget-exceeded", path, "image dimension budget exceeded");
+      }
+    } else if (inspection.width !== undefined || inspection.height !== undefined) {
+      return fail("resource-verification-failed", path, "buffer inspection must not report image dimensions");
+    }
+    const snapshot = new Uint8Array(resource.byteLength);
+    const digestObserved = { bytes: 0 };
+    let digest: unknown;
+    try {
+      digest = await deadline.race(() => port.digestSha256(
+        createBlobChunks(resource.payload, limits.chunkBytes, digestObserved, deadline.signal, path, snapshot),
+        context,
+      ));
+    } catch (error) {
+      if (error instanceof GpuModelDocumentError) throw error;
+      deadline.throwIfAborted();
+      return fail("resource-verification-failed", path, "resource digest verification failed");
+    }
+    deadline.throwIfAborted();
+    if (digestObserved.bytes !== resource.byteLength) return fail("resource-verification-failed", path, "resource digest did not consume the complete payload");
+    if (typeof digest !== "string" || !SHA_256.test(digest) || digest !== resource.contentHash) {
+      return fail("resource-verification-failed", path, "resource digest does not match contentHash");
+    }
+    if (resource.kind === "image") validateImageMagic(resource, snapshot, inspection, path);
+    const verified = Object.freeze({
+      ...resource,
+      payload: new Blob([snapshot], { type: resource.mimeType }),
+    });
+    verifiedResources.add(verified);
+    verifiedResourceBytes.set(verified, snapshot);
+    verifiedResourceEvidence.set(verified, Object.freeze({ ...inspection }));
+    return verified;
+  } finally {
+    deadline.dispose();
   }
-  const snapshot = new Uint8Array(resource.byteLength);
-  const digestObserved = { bytes: 0 };
-  let digest: unknown;
-  try {
-    digest = await withVerificationDeadline(
-      Promise.resolve(port.digestSha256(createBlobChunks(resource.payload, limits.chunkBytes, digestObserved, snapshot), context)),
-      limits.timeoutMs,
-      options?.signal,
-    );
-  } catch (error) {
-    if (error instanceof GpuModelDocumentError) throw error;
-    return fail("resource-verification-failed", path, "resource digest verification failed");
-  }
-  if (digestObserved.bytes !== resource.byteLength) return fail("resource-verification-failed", path, "resource digest did not consume the complete payload");
-  if (typeof digest !== "string" || !SHA_256.test(digest) || digest !== resource.contentHash) {
-    return fail("resource-verification-failed", path, "resource digest does not match contentHash");
-  }
-  if (resource.kind === "image") validateImageMagic(resource, snapshot, inspection, path);
-  const verified = Object.freeze({
-    ...resource,
-    payload: intrinsicBlobSlice(resource.payload, 0, resource.byteLength, resource.mimeType),
-  });
-  verifiedResources.add(verified);
-  verifiedResourceBytes.set(verified, snapshot);
-  return verified;
 }
 
 /** Verifies one bounded resource and returns a privately branded immutable value. */
@@ -985,7 +1084,13 @@ export async function verifyGpuModelResource(
 ): Promise<GpuModelResource> {
   try {
     const limits = resolveVerificationLimits(options);
-    return await verifyParsedResource(parseResourceHeader(value, "$.resource"), port, limits, options);
+    const resource = typeof value === "object"
+      && value !== null
+      && verifiedResources.has(value)
+      && verifiedResourceBytes.has(value)
+      ? value as GpuModelResource
+      : parseResourceHeader(value, "$.resource");
+    return await verifyParsedResource(resource, port, limits, options);
   } catch (error) {
     if (error instanceof GpuModelDocumentError) throw error;
     throw new GpuModelDocumentError("invalid-type", "$.resource", "resource could not be safely inspected");
@@ -1565,7 +1670,12 @@ function createAccessorReader(accessor: GpuModelAccessor, resource: GpuModelReso
   };
 }
 
-function validateAccessorPayload(reader: AccessorReader, path: string): void {
+interface AccessorPayloadEvidence {
+  readonly min: readonly number[];
+  readonly max: readonly number[];
+}
+
+function validateAccessorPayload(reader: AccessorReader, path: string): AccessorPayloadEvidence {
   const actualMin = new Array<number>(reader.components).fill(Number.POSITIVE_INFINITY);
   const actualMax = new Array<number>(reader.components).fill(Number.NEGATIVE_INFINITY);
   for (let item = 0; item < reader.accessor.count; item += 1) {
@@ -1590,22 +1700,18 @@ function validateAccessorPayload(reader: AccessorReader, path: string): void {
       }
     }
   }
+  return Object.freeze({
+    min: Object.freeze(actualMin),
+    max: Object.freeze(actualMax),
+  });
 }
 
-function actualAccessorBounds(reader: AccessorReader, path: string): GpuModelBounds {
+function actualAccessorBounds(reader: AccessorReader, evidence: AccessorPayloadEvidence, path: string): GpuModelBounds {
   if (reader.components !== 3) return fail("invalid-reference", path, "position reader must have three components");
-  const min = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
-  const max = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
-  for (let vertex = 0; vertex < reader.accessor.count; vertex += 1) {
-    const values = reader.read(vertex);
-    for (let component = 0; component < 3; component += 1) {
-      const value = values[component]!;
-      if (!Number.isFinite(value)) return fail("invalid-value", path, "POSITION payload contains a non-finite value");
-      min[component] = Math.min(min[component]!, value);
-      max[component] = Math.max(max[component]!, value);
-    }
-  }
-  return { min: min as unknown as GpuModelVec3, max: max as unknown as GpuModelVec3 };
+  return {
+    min: evidence.min as GpuModelVec3,
+    max: evidence.max as GpuModelVec3,
+  };
 }
 
 function assertBoundsEqual(actual: GpuModelBounds, declared: GpuModelBounds, path: string): void {
@@ -1616,7 +1722,7 @@ function assertBoundsEqual(actual: GpuModelBounds, declared: GpuModelBounds, pat
   }
 }
 
-function validateReferences(document: GpuModelDocument): void {
+function validateReferences(document: GpuModelDocument, budget: DocumentBudget): void {
   const nodes = indexById(document.nodes, "$.nodes");
   const resources = indexById(document.resources, "$.resources");
   const accessors = indexById(document.accessors, "$.accessors");
@@ -1632,17 +1738,19 @@ function validateReferences(document: GpuModelDocument): void {
   const scene = validateScene(document.roots, document.nodes, nodes);
 
   const readers = new Map<string, AccessorReader>();
+  const payloadEvidence = new Map<string, AccessorPayloadEvidence>();
   for (let index = 0; index < document.accessors.length; index += 1) {
     const accessor = document.accessors[index]!;
     const resource = requireReference(resources, accessor.resourceId, `$.accessors[${index}].resourceId`, "resource");
     if (resource.kind !== "buffer") return fail("invalid-reference", `$.accessors[${index}].resourceId`, "accessor resource must be a buffer");
     const reader = createAccessorReader(accessor, resource, `$.accessors[${index}]`);
-    validateAccessorPayload(reader, `$.accessors[${index}]`);
+    payloadEvidence.set(accessor.id, validateAccessorPayload(reader, `$.accessors[${index}]`));
     readers.set(accessor.id, reader);
   }
 
   const primitiveById = new Map<string, { primitive: GpuModelPrimitive; mesh: GpuModelMesh; path: string; position: GpuModelAccessor }>();
   const weightedPrimitiveIds = new Set<string>();
+  const maximumIndexByAccessor = new Map<string, number>();
   for (let meshIndex = 0; meshIndex < document.meshes.length; meshIndex += 1) {
     const mesh = document.meshes[meshIndex]!;
     for (let primitiveIndex = 0; primitiveIndex < mesh.primitives.length; primitiveIndex += 1) {
@@ -1665,7 +1773,12 @@ function validateReferences(document: GpuModelDocument): void {
         }
         weightedPrimitiveIds.add(primitive.id);
       }
-      const actual = actualAccessorBounds(requireReference(readers, position.id, `${path}.attributes`, "accessor reader"), `${path}.attributes.POSITION`);
+      const positionReader = requireReference(readers, position.id, `${path}.attributes`, "accessor reader");
+      const actual = actualAccessorBounds(
+        positionReader,
+        requireReference(payloadEvidence, position.id, `${path}.attributes`, "accessor payload evidence"),
+        `${path}.attributes.POSITION`,
+      );
       assertBoundsEqual(actual, { min: position.min as GpuModelVec3, max: position.max as GpuModelVec3 }, `${path}.attributes.POSITION`);
       if (primitive.indicesAccessorId) {
         const indices = requireReference(accessors, primitive.indicesAccessorId, `${path}.indicesAccessorId`, "accessor");
@@ -1673,18 +1786,48 @@ function validateReferences(document: GpuModelDocument): void {
           return fail("invalid-reference", `${path}.indicesAccessorId`, "index accessor must be an unsigned non-normalized scalar");
         }
         const indexReader = requireReference(readers, indices.id, `${path}.indicesAccessorId`, "accessor reader");
-        for (let item = 0; item < indices.count; item += 1) {
-          if (indexReader.read(item)[0]! >= position.count) return fail("invalid-reference", `${path}.indicesAccessorId`, "index payload references a vertex outside POSITION");
+        let maximumIndex = maximumIndexByAccessor.get(indices.id);
+        if (maximumIndex === undefined) {
+          consumeBudget(
+            budget,
+            "geometryIndexElements",
+            indices.count,
+            GPU_MODEL_DOCUMENT_LIMITS.geometryIndexElements,
+            `${path}.indicesAccessorId`,
+            "geometry index element",
+          );
+          maximumIndex = 0;
+          for (let item = 0; item < indices.count; item += 1) {
+            maximumIndex = Math.max(maximumIndex, indexReader.read(item)[0]!);
+          }
+          maximumIndexByAccessor.set(indices.id, maximumIndex);
+        }
+        if (maximumIndex >= position.count) return fail("invalid-reference", `${path}.indicesAccessorId`, "index payload references a vertex outside POSITION");
+      }
+      if (primitive.materialId) {
+        const material = requireReference(materials, primitive.materialId, `${path}.materialId`, "material");
+        const semantics = new Set(primitive.attributes.map(({ semantic }) => semantic));
+        for (const [slot, binding] of Object.entries(material.textures)) {
+          if (!binding) continue;
+          const requiredSemantic = `TEXCOORD_${String(binding.texCoordSet ?? 0)}`;
+          if (!semantics.has(requiredSemantic)) {
+            return fail(
+              "invalid-reference",
+              `${path}.materialId`,
+              `material texture binding ${slot} requires primitive attribute ${requiredSemantic}`,
+            );
+          }
         }
       }
-      if (primitive.materialId) requireReference(materials, primitive.materialId, `${path}.materialId`, "material");
       primitiveById.set(primitive.id, { primitive, mesh, path, position });
     }
   }
 
-  let hasWorldGeometry = false;
-  const worldMin = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
-  const worldMax = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  const worldGeometry: Array<{
+    readonly nodeIndex: number;
+    readonly world: GpuModelMatrix4;
+    readonly positionReaders: readonly AccessorReader[];
+  }> = [];
   for (let nodeIndex = 0; nodeIndex < document.nodes.length; nodeIndex += 1) {
     const node = document.nodes[nodeIndex]!;
     if (node.skinId && !node.meshId) return fail("invalid-reference", `$.nodes[${nodeIndex}].skinId`, "a skinned node must also reference a mesh");
@@ -1692,9 +1835,35 @@ function validateReferences(document: GpuModelDocument): void {
     if (!node.meshId) continue;
     const mesh = requireReference(meshes, node.meshId, `$.nodes[${nodeIndex}].meshId`, "mesh");
     const world = requireReference(scene.worldByNode, node.id, `$.nodes[${nodeIndex}]`, "world transform");
-    hasWorldGeometry = true;
-    for (const primitive of mesh.primitives) {
-      const reader = requireReference(readers, primitiveById.get(primitive.id)!.position.id, `$.nodes[${nodeIndex}].meshId`, "POSITION reader");
+    const positionIds = new Set(mesh.primitives.map((primitive) => primitiveById.get(primitive.id)!.position.id));
+    const positionReaders = Object.freeze([...positionIds].map((positionId) => {
+      const reader = requireReference(readers, positionId, `$.nodes[${nodeIndex}].meshId`, "POSITION reader");
+      consumeBudget(
+        budget,
+        "geometryWorldAccessorInstances",
+        1,
+        GPU_MODEL_DOCUMENT_LIMITS.geometryWorldAccessorInstances,
+        `$.nodes[${nodeIndex}].meshId`,
+        "world-geometry accessor instance",
+      );
+      consumeBudget(
+        budget,
+        "geometryWorldVertices",
+        reader.accessor.count,
+        GPU_MODEL_DOCUMENT_LIMITS.geometryWorldVertices,
+        `$.nodes[${nodeIndex}].meshId`,
+        "world-geometry vertex",
+      );
+      return reader;
+    }));
+    worldGeometry.push({ nodeIndex, world, positionReaders });
+  }
+  if (worldGeometry.length === 0) return fail("invalid-reference", "$.bounds", "document bounds require scene-referenced byte-verified POSITION geometry");
+
+  const worldMin = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+  const worldMax = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  for (const { nodeIndex, world, positionReaders } of worldGeometry) {
+    for (const reader of positionReaders) {
       for (let vertex = 0; vertex < reader.accessor.count; vertex += 1) {
         const transformed = transformPosition(world, reader.read(vertex));
         for (let component = 0; component < 3; component += 1) {
@@ -1706,7 +1875,6 @@ function validateReferences(document: GpuModelDocument): void {
       }
     }
   }
-  if (!hasWorldGeometry) return fail("invalid-reference", "$.bounds", "document bounds require scene-referenced byte-verified POSITION geometry");
   assertBoundsEqual(
     { min: worldMin as unknown as GpuModelVec3, max: worldMax as unknown as GpuModelVec3 },
     document.bounds,
@@ -1961,6 +2129,9 @@ function parseGpuModelDocument(value: unknown): GpuModelDocument {
     animationSamplers: 0,
     animationChannels: 0,
     animationValues: 0,
+    geometryIndexElements: 0,
+    geometryWorldAccessorInstances: 0,
+    geometryWorldVertices: 0,
   };
   const roots = Object.freeze(readArray(requireKey(record, "roots", path), "$.roots", GPU_MODEL_DOCUMENT_LIMITS.roots, 1)
     .map((entry, index) => readId(entry, `$.roots[${index}]`)));
@@ -1986,7 +2157,7 @@ function parseGpuModelDocument(value: unknown): GpuModelDocument {
     metadata: readMetadata(requireKey(record, "metadata", path), "$.metadata", budget),
   };
   if (document.meshes.length === 0) return fail("invalid-value", "$.meshes", "v1 document bounds require at least one canonical mesh");
-  validateReferences(document);
+  validateReferences(document, budget);
   const frozen = deepFreeze(document);
   validatedDocuments.add(frozen);
   return frozen;
@@ -2031,8 +2202,14 @@ export async function createAndVerifyGpuModelDocument(
   port: GpuModelResourceVerificationPort,
   options?: GpuModelResourceVerificationOptions,
 ): Promise<GpuModelDocument> {
-  if (isGpuModelDocument(value)) return value;
   try {
+    const limits = resolveVerificationLimits(options);
+    if (options?.signal?.aborted) return fail("resource-verification-failed", "$.resources", "resource verification was aborted");
+    if (isGpuModelDocument(value)) {
+      preflightResourceBudget(value.resources, limits);
+      value.resources.forEach((resource, index) => assertVerifiedResourceEvidence(resource, limits, `$.resources[${index}]`));
+      return value;
+    }
     const record = readRecord(value, "$", DOCUMENT_KEYS);
     const resourceInput = readArray(requireKey(record, "resources", "$"), "$.resources", GPU_MODEL_DOCUMENT_LIMITS.resources, 1);
     const parsed = resourceInput.map((entry, index) => {
@@ -2040,7 +2217,6 @@ export async function createAndVerifyGpuModelDocument(
       return parseResourceHeader(entry, `$.resources[${index}]`);
     });
     ensureUnique(parsed.map(({ id }) => id), "$.resources");
-    const limits = resolveVerificationLimits(options);
     preflightResourceBudget(parsed, limits);
     const verified: GpuModelResource[] = [];
     for (let index = 0; index < parsed.length; index += 1) {
@@ -2063,6 +2239,19 @@ export const GPU_MODEL_STATIC_DEMO_PROFILE_VERSION = "plasius.gpu-model-static-d
 
 /** Remotely evaluated parent gate required before the demo projection may run. */
 export const GPU_MODEL_STATIC_DEMO_FEATURE_FLAG = "asset.pipeline.pvox-models.enabled" as const;
+
+/** Fixed-point PVOX coordinate ceiling; callers cannot override or raise it. */
+export const GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES = 1_048_576 as const;
+
+/** Largest axis extent representable between the fixed coordinate endpoints. */
+export const GPU_MODEL_STATIC_DEMO_MAX_EXTENT_METRES = GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES * 2;
+
+/** Largest three-axis diagonal representable inside the fixed coordinate cube. */
+export const GPU_MODEL_STATIC_DEMO_MAX_DIAGONAL_METRES = Math.hypot(
+  GPU_MODEL_STATIC_DEMO_MAX_EXTENT_METRES,
+  GPU_MODEL_STATIC_DEMO_MAX_EXTENT_METRES,
+  GPU_MODEL_STATIC_DEMO_MAX_EXTENT_METRES,
+);
 
 /** Non-raiseable ceilings for the bounded static PVOX demonstration profile. */
 export const GPU_MODEL_STATIC_DEMO_LIMITS = Object.freeze({
@@ -2205,13 +2394,17 @@ function resolveStaticDemoLimits(options: GpuModelStaticDemoCompilerOptions): Re
 /** Proves metre/Y-up/-Z/floor-centred normalization against verified bounds. */
 export function assertGpuModelStaticDemoNormalization(document: GpuModelDocument): void {
   if (!isGpuModelDocument(document)) return fail("invalid-type", "$", "normalization requires a verified GPU model document");
-  const diagonal = Math.hypot(
-    document.bounds.max[0] - document.bounds.min[0],
-    document.bounds.max[1] - document.bounds.min[1],
-    document.bounds.max[2] - document.bounds.min[2],
-  );
+  const extents = document.bounds.max.map((value, index) => value - document.bounds.min[index]!);
+  const diagonal = Math.hypot(...extents);
   if (!Number.isFinite(diagonal) || diagonal <= 0) return fail("invalid-value", "$.bounds", "static demo bounds must have a finite non-zero diagonal");
-  const tolerance = Math.max(1, diagonal) * EPSILON;
+  if ([...document.bounds.min, ...document.bounds.max].some((value) => Math.abs(value) > GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES)) {
+    return fail("limit-exceeded", "$.bounds", "static demo coordinate magnitude exceeds the fixed PVOX ceiling");
+  }
+  if (extents.some((extent) => extent > GPU_MODEL_STATIC_DEMO_MAX_EXTENT_METRES)
+    || diagonal > GPU_MODEL_STATIC_DEMO_MAX_DIAGONAL_METRES) {
+    return fail("limit-exceeded", "$.bounds", "static demo extent exceeds the fixed PVOX ceiling");
+  }
+  const tolerance = Math.min(1e-3, Math.max(1, diagonal) * EPSILON);
   const floorAligned = Math.abs(document.bounds.min[1]) <= tolerance;
   const centeredX = Math.abs(document.bounds.min[0] + document.bounds.max[0]) <= tolerance * 2;
   const centeredZ = Math.abs(document.bounds.min[2] + document.bounds.max[2]) <= tolerance * 2;

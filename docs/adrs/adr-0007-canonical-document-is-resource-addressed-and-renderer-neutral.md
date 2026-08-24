@@ -32,15 +32,22 @@ Resource validity is an identity property, not a structural property. Raw
 resources must pass an asynchronous, injected streaming digest/inspection port.
 The verifier enforces byte and image budgets before expensive work, checks MIME
 and dimensions, compares the computed SHA-256 digest, retains a private byte
-snapshot for semantic validation, and brands the immutable result in a private
-`WeakSet`. The synchronous document factory accepts only those branded resource
-objects. A structured clone loses the brand and must be reverified.
+snapshot for semantic validation, creates the returned `Blob` from that exact
+snapshot, and brands the immutable result in a private `WeakSet`. A single
+internal deadline `AbortSignal` reaches both injected worker operations and the
+chunk iterable. Cached attestation retains inspection evidence so idempotent
+re-verification can still apply cancellation and caller-tightened limits. The
+synchronous document factory accepts only branded resource objects. A
+structured clone loses the brand and must be reverified.
 
 Accessor min/max, geometry finiteness, primitive indices, skin joint indices and
 weights, animation sample values, and canonical world-space bounds are checked
-against verified bytes. Node and inverse-bind matrices are affine. This keeps
-document validity bound to the exact payload rather than to attacker-controlled
-metadata claims.
+against verified bytes. Aggregate index and instanced-world traversal work is
+bounded, while accessor evidence and repeated position/index reads are cached
+per validation. A textured material may be used only by primitives that carry
+its selected `TEXCOORD_n` attribute. Node and inverse-bind matrices are affine.
+This keeps document validity bound to the exact payload rather than to
+attacker-controlled metadata claims.
 
 Task `gpu-model-core#13`, under the separate PVOX Feature #2012, adds an
 additive compiler projection rather than changing the canonical document owned
@@ -52,7 +59,9 @@ It intentionally strips URLs and arbitrary metadata from the compiler surface.
 
 The projection requires callers to pass a positive remote evaluation of
 `asset.pipeline.pvox-models.enabled`. It proves the advertised floor-centred
-coordinate promise from world bounds, applies strict demo limits, and rejects
+coordinate promise from world bounds, enforces the PVOX-aligned non-raiseable
+absolute coordinate ceiling of 1,048,576 metres plus derived extent/diagonal
+ceilings, applies strict demo limits, and rejects
 dynamic, textured, non-triangle, singular-transform, or otherwise unsupported
 documents before `@plasius/gpu-model-voxel` can compile them.
 

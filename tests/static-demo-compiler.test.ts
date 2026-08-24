@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   GPU_MODEL_STATIC_DEMO_FEATURE_FLAG,
+  GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES,
   GPU_MODEL_STATIC_DEMO_PROFILE_VERSION,
   GpuModelDocumentError,
   createAndVerifyGpuModelDocument,
@@ -137,6 +138,16 @@ describe("bounded static-demo compiler document", () => {
     const original = validDocument();
     texturedInput.resources = original.resources;
     texturedInput.textures = original.textures;
+    texturedInput.accessors = [
+      ...(texturedInput.accessors as unknown[]),
+      (original.accessors as Array<Record<string, unknown>>).find(({ id }) => id === "texcoords")!,
+    ];
+    const texturedPrimitive = ((texturedInput.meshes as Array<Record<string, unknown>>)[0]!
+      .primitives as Array<Record<string, unknown>>)[0]!;
+    texturedPrimitive.attributes = [
+      ...(texturedPrimitive.attributes as unknown[]),
+      { semantic: "TEXCOORD_0", accessorId: "texcoords" },
+    ];
     (texturedInput.materials as Array<Record<string, unknown>>)[0]!.textures =
       (original.materials as Array<Record<string, unknown>>)[0]!.textures;
     const textured = await createStatic(texturedInput);
@@ -180,6 +191,19 @@ describe("bounded static-demo compiler document", () => {
     translatedInput.bounds = { min: [-1, 1, -1], max: [1, 3, 1] };
     await expect(createGpuModelStaticDemoCompilerInput(await createStatic(translatedInput), ENABLED))
       .rejects.toMatchObject({ code: "invalid-value", path: "$.bounds" });
+
+    expect(GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES).toBe(1_048_576);
+    const extremeInput = staticDemoDocument();
+    const scale = GPU_MODEL_STATIC_DEMO_MAX_ABSOLUTE_COORDINATE_METRES + 1;
+    (extremeInput.nodes as Array<Record<string, unknown>>)[0]!.localMatrix = [
+      scale, 0, 0, 0,
+      0, scale, 0, 0,
+      0, 0, scale, 0,
+      0, 0, 0, 1,
+    ];
+    extremeInput.bounds = { min: [-scale, 0, -scale], max: [scale, 2 * scale, scale] };
+    await expect(createGpuModelStaticDemoCompilerInput(await createStatic(extremeInput), ENABLED))
+      .rejects.toMatchObject({ code: "limit-exceeded", path: "$.bounds" });
   });
 
   it("rejects incomplete triangle groups and singular world transforms", async () => {

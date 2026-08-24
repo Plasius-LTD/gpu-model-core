@@ -35,6 +35,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Fixed**
+  - Made resource re-verification idempotent while still enforcing tighter cached limits and cancellation, and cross-checked every material texture binding against the primitive's required `TEXCOORD_n` attribute.
   - (placeholder)
 
 - **Security**
@@ -44,6 +45,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - Added fail-closed source and npm-package admission for the administrative contributor registry and pinned the CI/CD runtime to Node.js 24.18.0 LTS.
   - Updated transitive development-tool overrides for `brace-expansion` and `nanoid` to patched releases after dependency advisory review; runtime dependencies remain unaffected.
   - Added fail-closed resource/image budgets, MIME and image inspection, affine-matrix enforcement, and control/bidirectional-text escaping for bounded validation errors.
+  - Bound returned resource payloads to the exact digest snapshot, propagated a real internal deadline signal through verification ports and chunks, capped aggregate instanced-geometry work, cached repeated geometry evidence, and fixed the static PVOX coordinate ceiling at 1,048,576 metres.
   - (placeholder)
 
 ## [1.2.17] - 2026-06-28

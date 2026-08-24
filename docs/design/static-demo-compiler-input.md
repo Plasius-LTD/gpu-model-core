@@ -35,7 +35,9 @@ Object keys are lexically sorted and semantic array order remains significant.
 
 1. Verify that the input carries the private Task #3 document attestation.
 2. Require the caller-provided remote feature evaluation to be enabled.
-3. Prove floor and horizontal-centre normalization from verified world bounds.
+3. Prove floor and horizontal-centre normalization from verified world bounds,
+   and enforce the fixed 1,048,576-metre absolute coordinate ceiling plus its
+   derived extent/diagonal ceilings.
 4. Reject dynamic, image, texture, non-triangle, unsupported-material, and
    unsupported-attribute content.
 5. Enforce caller-tightenable but non-raiseable resource and scene limits.

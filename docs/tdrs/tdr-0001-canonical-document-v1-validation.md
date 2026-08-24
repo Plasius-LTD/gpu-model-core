@@ -46,19 +46,25 @@ public API.
 
 The inspection port must consume the full bounded stream, identify MIME, and
 report dimensions for images. The digest port independently consumes the full
-stream and returns a lowercase SHA-256 digest. Port failures are translated to
-stable errors without leaking provider details. The private verified byte
-snapshot is then authoritative for accessor span/alignment/min/max checks,
-finite geometry and animation values, index ranges, joint/weight pairing, and
-world-space bounds under affine transforms.
+stream and returns a lowercase SHA-256 digest. Both calls and their chunk
+iterables receive one internal deadline/cancellation signal. Port failures are
+translated to stable errors without leaking provider details. The returned
+resource `Blob` is reconstructed from the digest snapshot; cached resources
+retain private inspection evidence so tighter later limits and cancellation are
+still applied without repeating trusted worker work. The snapshot is then
+authoritative for accessor span/alignment/min/max checks, finite geometry and
+animation values, index ranges, joint/weight pairing, and world-space bounds
+under affine transforms.
 
 A document must contain scene-referenced byte-verified mesh geometry; analytic
 geometry placeholders may be retained alongside that canonical mesh fallback.
 Skeletons, joints and skins are distinct. Skeleton ancestry, exact
 root membership, skin-to-mesh linkage, inverse-bind ordering, explicit authored
 weight rows, blend-shape deltas, clip duration/timing, texture usage/colour
-space/transforms, and namespaced material extension payloads are preserved and
-validated. Tolerant repair and conversion-loss policy remain Task #4 concerns;
+space/transforms, primitive `TEXCOORD_n` availability, and namespaced material
+extension payloads are preserved and validated. Accessor payload evidence and
+index extrema are cached, while aggregate index and instanced-world geometry
+work is capped before repeated traversal. Tolerant repair and conversion-loss policy remain Task #4 concerns;
 external/package resource-graph expansion remains Task #5.
 
 ## Compatibility
@@ -74,6 +80,8 @@ document and only after the caller supplies a positive evaluation of
 `asset.pipeline.pvox-models.enabled`. Its non-raiseable defaults are 200,000
 world triangles, 4,096 nodes, 16,384 primitives, 4,096 materials, 16 MiB per
 resource, and 16 MiB aggregate resources. Callers may tighten those values.
+World coordinates additionally use the fixed PVOX-compatible absolute ceiling
+of 1,048,576 metres and derived non-raiseable axis-extent/diagonal ceilings.
 
 The profile rejects skins, skeletons, joints, blend shapes, animation, analytic
 geometry, images, texture bindings, custom/specular-glossiness workflows,
