@@ -9,6 +9,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.1.0] - 2026-08-25
+
 - Added a fail-closed, version-`0.1.0`-only first-publication bootstrap that is available solely through `cd.yml` and the `production` environment, refuses an existing npm package, and is removed after trusted publishing is bound.
 
 - **Added**
@@ -379,7 +393,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ---
 
-[Unreleased]: https://github.com/Plasius-LTD/schema/compare/v1.2.17...HEAD
+[Unreleased]: https://github.com/Plasius-LTD/gpu-model-core/compare/v0.1.0...HEAD
 [1.0.0]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.0
 [1.0.13]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.13
 [1.0.17]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.17
@@ -414,3 +428,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.2.15]: https://github.com/Plasius-LTD/schema/releases/tag/v1.2.15
 [1.2.16]: https://github.com/Plasius-LTD/schema/releases/tag/v1.2.16
 [1.2.17]: https://github.com/Plasius-LTD/schema/releases/tag/v1.2.17
+[0.1.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.1.0
