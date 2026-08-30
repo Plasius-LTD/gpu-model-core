@@ -172,17 +172,14 @@ Apache-2.0. See LICENSE, SECURITY.md, and the files under legal/.
 ## Release integrity
 
 CI keeps the administrative contributor registry outside Git and npm package
-artifacts using exact, case-normalised path checks. CI runs on approved
-self-hosted runners for same-repository pull requests and `main`; fork PR code
-is denied. Normal publication uses the GitHub-hosted `production` job with Node 24 and
-npm 11.5.1 or newer. It is token-free and proceeds only while the prepared SHA
-is the exact `main` head after successful push-triggered CI. Because npm cannot
-bind a trusted publisher before the package exists, the initial `0.1.0` release
-has an explicit, package-absence-checked bootstrap path using a short-lived
-credential in `production`. An operator must select `bootstrap_first_publish`
-on the `prepare` dispatch; `queue_publish` forwards that exact selection to the
-exact-commit `publish` dispatch. The default remains token-free, registry
-transport failures do not count as proof of package absence, and an OIDC error
-never activates the bootstrap path. Remove that path and credential immediately
-after the trusted publisher is bound and a later OIDC release is proven.
+artifacts using normalized path checks and sealed-tar revalidation. The
+GitHub-hosted Node.js 24.18.0 release path follows the released
+`@plasius/schema` v1.4.2 template: release metadata lands through a protected
+pull request, exact-main CI must pass, and the immutable tarball is published
+through npm OIDC. Package-specific adaptations are limited to GitHub-hosted CI
+while the organisation runner is unavailable, current Node-24-compatible action
+majors with best-effort Codecov CLI upload, and a protected-merge retry when
+repository auto-merge is unavailable. Version `0.1.0` may use the explicit,
+time-limited `bootstrap_first_publish` production gate only while the package is absent;
+that credential is removed after the npm trusted publisher binding is active.
 <!-- END PLASIUS RELEASE INTEGRITY -->
