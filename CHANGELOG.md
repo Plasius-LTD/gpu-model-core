@@ -13,13 +13,22 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Changed**
-  - (placeholder)
+  - Aligned GitHub CI, release preparation, immutable package sealing, npm OIDC
+    publication, privacy checks, and first-publication safeguards with the
+    released `@plasius/schema` v1.4.2 package template.
 
 - **Fixed**
-  - (placeholder)
+  - Added trusted same-repository pull-request validation and moved all CI jobs
+    to GitHub-hosted Linux so protected release checks cannot wait on an
+    unavailable self-hosted runner.
+  - Retried the protected release-metadata merge while required checks complete,
+    allowing the approved CD path to proceed when repository auto-merge is
+    unavailable.
 
 - **Security**
-  - (placeholder)
+  - Revalidated the complete npm tar stream against the same normalized public
+    inventory policy before publication; the temporary bootstrap remains
+    isolated from the default trusted-publishing path.
 
 ## [0.1.0] - 2026-08-25
 
