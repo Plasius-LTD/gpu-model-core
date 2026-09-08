@@ -10,3 +10,5 @@ export const packageBootstrap = Object.freeze({
 export * from "./model-document.js";
 
 export * from "./diagnostics.js";
+
+export * from "./resource-graph.js";

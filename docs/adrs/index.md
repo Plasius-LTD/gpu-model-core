@@ -8,3 +8,4 @@
 - [ADR-0006: Hosted OIDC Package Publication](./adr-0006-hosted-oidc-package-publication.md)
 - [ADR-0007: Canonical document is resource-addressed and renderer-neutral](./adr-0007-canonical-document-is-resource-addressed-and-renderer-neutral.md)
 - [ADR-0008: Bounded adapter diagnostics and repair ledgers](./adr-0008-bounded-adapter-diagnostics-and-repair-ledgers.md)
+- [ADR-0009: Canonical conversion resource graph](./adr-0009-canonical-conversion-resource-graph.md)

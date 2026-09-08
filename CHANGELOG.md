@@ -10,7 +10,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added a bounded, immutable canonical resource dependency graph with verified
+    payloads, embedded/external location descriptors, typed conversion packages,
+    deterministic references and missing/duplicate/cycle validation.
 
 - **Changed**
   - (placeholder)
