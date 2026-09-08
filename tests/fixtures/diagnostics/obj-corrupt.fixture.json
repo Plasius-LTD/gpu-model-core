@@ -1,0 +1,9 @@
+{
+  "id": "obj-corrupt",
+  "format": "obj",
+  "rawPayload": { "source": "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1/1 3/3 2/2\nmtllib ../outside/materials.mtl\n", "materialLibrary": "../outside/materials.mtl" },
+  "issues": [
+    { "ruleId": "bad-winding", "path": "/faces/0/vertices", "originalValue": [1, 3, 2], "message": "Face orientation conflicts with the adapter coordinate convention." },
+    { "ruleId": "missing-texture-path", "path": "/materials/0/textures/0/uri", "originalValue": "../outside/materials.mtl", "message": "Texture/material path escapes the package root." }
+  ]
+}

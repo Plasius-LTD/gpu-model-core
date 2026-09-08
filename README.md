@@ -4,6 +4,71 @@ Canonical model document, resource graph, diagnostics, and adapter contracts.
 
 This repository is the dedicated package boundary defined by ADR 0094.
 
+## Diagnostics, repairs and conversion loss
+
+`evaluateGpuModelDiagnostics` validates a format adapter's completed report.
+It defaults to strict mode, rejecting every standard violation. Tolerant and
+forensic modes accept only supported rules with `repairApplied: true`, which
+attests that the adapter performed and verified the exact `action` exposed by
+`GPU_MODEL_REPAIR_RULES`. It does **not** parse a model or perform repairs.
+Continue to validate the repaired document with `validateGpuModelDocument`.
+
+```ts
+import { evaluateGpuModelDiagnostics } from "@plasius/gpu-model-core";
+
+const report = evaluateGpuModelDiagnostics({
+  standard: "gltf-glb",
+  mode: "tolerant",
+  issues: [{
+    kind: "violation",
+    ruleId: "missing-normals",
+    code: "NORMAL_REQUIRED",
+    path: "/meshes/0/primitives/0/attributes/NORMAL",
+    message: "Required normals were missing",
+    originalValue: null,
+    repairApplied: true, // Adapter already generated and validated normals.
+  }],
+});
+// report.accepted === true; report.repairs contains the complete repair record.
+```
+
+Blocking errors, repairs, unsupported data, warnings and loss are separate
+`kind` variants. Unknown rules and unsupported data block every mode. Repairs
+preserve `originalValue`, `action`, `severity`, `affectedPath`, `confidence`, and
+`ruleId`. The supported profiles are `gltf-glb`, `obj-mtl`, `fbx`, and `cad-bim`;
+OBJ cannot use the skin-weight repair rule. The exported policy text records
+the upstream rule; executable contract actions deliberately narrow ambiguous
+fallbacks: invalid primitives are dropped (never clamped), unavailable textures
+remain unresolved, and malformed material references use the canonical default.
+These three fallbacks require a `kind: "loss"` issue at the same path. Each loss
+states `effect: "dropped" | "approximated"`; any loss blocks acceptance unless
+`allowLoss: true` is explicitly supplied, including in strict mode.
+
+Forensic mode requires `rawSource`, a relevant, scrubbed JSON snapshot. Other
+modes reject that field to prevent unintended retention. Source evidence is
+separate from ordinary diagnostics and remains available even when conversion
+is rejected. Represent source NaN/Infinity as descriptive strings, not numbers.
+Never include credentials, signed URLs or unrelated personal data, and never
+log raw evidence or repair snapshots. The package performs no logging, I/O,
+persistence or credential detection. Use serialized JSON as the boundary for
+untrusted executable producers; JavaScript Proxies are not inert data.
+
+`GPU_MODEL_DIAGNOSTIC_LIMITS` bounds the entire input to 1 MiB of JSON UTF-8,
+4096 issues, 16384 JSON values, depth 12, 1024 members per evidence container
+and 65536 UTF-16 units per string. All ceilings apply together. Optional
+`maxEvidenceBytes` lowers the aggregate byte ceiling, including report fields
+and the limit itself. Overflow, unknown keys, getters, cycles, sparse arrays,
+exotic objects and malformed reports throw a static `GpuModelDiagnosticsError`
+without echoing caller data. Successful output is deeply frozen and owned by
+the package; caller objects remain mutable and unchanged.
+
+The parent `gpu.model.conversion.enabled` flag governs adapter adoption. Keep
+it disabled until adapter-specific conformance tests pass; rollback disables
+the flag and restores strict mode. This API changes no stored flag and adds no
+UI capability. Synthetic contract fixtures cover glTF, OBJ, FBX and CAD reports;
+actual parsing and geometry verification belong to their format adapters.
+See [ADR-0008](docs/adrs/adr-0008-bounded-adapter-diagnostics-and-repair-ledgers.md).
+
 ## Implementation tracker
 
 The canonical conversion architecture is defined by [ADR 0094 in `plasius-ltd-site`](https://github.com/Plasius-LTD/plasius-ltd-site/blob/main/docs/adrs/adr-0094-gpu-model-family-and-canonical-proxy-conversion.md). The package implementation work is split into Project-tracked Tasks:
