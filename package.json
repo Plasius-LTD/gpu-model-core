@@ -1,6 +1,6 @@
 {
   "name": "@plasius/gpu-model-core",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Canonical GPU model document, resource graph, diagnostics, and adapter contracts.",
   "type": "module",
   "sideEffects": false,
