@@ -314,3 +314,151 @@ repository auto-merge is unavailable. Version `0.1.0` may use the explicit,
 time-limited `bootstrap_first_publish` production gate only while the package is absent;
 that credential is removed after the npm trusted publisher binding is active.
 <!-- END PLASIUS RELEASE INTEGRITY -->
+
+## Adapter contracts and canonical conversion
+
+`ModelAdapter` exposes `metadata`, `inspect`, `load`, `validate` and `export`.
+Register one explicit lowercase format ID per adapter using
+`createModelConversionRegistry`. Core has no concrete format parsers, IO
+resolvers, renderer dependencies, format sniffing, discovery or caches. Those
+belong to the dedicated format/runtime packages; inject adapters after a runtime
+has checked the remote `gpu.model.conversion.enabled` flag. Disable that flag
+and pin the prior public version to roll back adoption.
+
+```ts
+import {
+  createModelConversionRegistry, type ModelAdapter,
+  type ModelSource, type ModelTarget,
+} from "@plasius/gpu-model-core";
+
+// Applications supply installed, conformance-tested adapters.
+async function convert(sourceAdapter: ModelAdapter, targetAdapter: ModelAdapter) {
+  const registry = createModelConversionRegistry([sourceAdapter, targetAdapter]);
+  const source: ModelSource = {
+    kind: "uint8-array", bytes: new Uint8Array([1, 2, 3]),
+    fileNameHint: "synthetic.input",
+  };
+  const target: ModelTarget = { kind: "array-buffer" };
+  const result = await registry.convert({
+    sourceFormat: sourceAdapter.metadata.formatId,
+    targetFormat: targetAdapter.metadata.formatId,
+    source, target,
+  }, { mode: "strict", allowLoss: false, timeoutMs: 30_000 });
+  if (!result.accepted) return result.diagnostics;
+  return result.exported;
+}
+```
+
+Conversion calls source `load`, checks the privately verified canonical document,
+records target capability losses, calls target `validate(document)`, and finally
+calls target `export`. Same-format conversion follows the same route. It never
+calls `inspect` automatically, so a single-use stream is not consumed twice.
+`registry.inspect`, `load`, `validate` and `export` also enforce the boundary
+individually; direct export includes canonical capability/validation preflight.
+Unsupported formats or IO kinds are rejected before adapter work. There is no
+public direct-format converter hook, and extra registration keys are rejected.
+Use plain adapter objects with the four operations as own methods.
+
+The following are the supported declarative forms. IO hints remain optional;
+paths, URLs and stream handles confer no authorization from core. The injected
+runtime must enforce filesystem roots, network allowlists, size limits while
+streaming, credentials, output overwrite policy, and atomic staging/commit.
+Never log headers or signed URLs; scrub adapter diagnostic/evidence text before
+calling the result factory. Core produces fixed error codes with no input or
+exception causes, but it cannot identify secrets embedded in arbitrary adapter
+messages.
+
+```ts
+import type { ModelSource, ModelTarget } from "@plasius/gpu-model-core";
+
+const sources: ModelSource[] = [
+  { kind: "file-path", path: "/models/synthetic.input" },
+  { kind: "url", url: "https://example.invalid/model", headers: { Accept: "application/octet-stream" } },
+  { kind: "blob-storage-url", url: "https://example.invalid/model", credentialMode: "runtime-resolved" },
+  { kind: "blob", blob: new Blob(["synthetic"]), fileNameHint: "synthetic.input" },
+  { kind: "array-buffer", bytes: new ArrayBuffer(4) },
+  { kind: "uint8-array", bytes: new Uint8Array(4), mimeTypeHint: "application/octet-stream" },
+  { kind: "stream", stream: new ReadableStream<Uint8Array>(), byteLengthHint: 4 },
+];
+const targets: ModelTarget[] = [
+  { kind: "file-path", path: "/exports/synthetic.output", overwrite: false },
+  { kind: "blob-storage-url", url: "https://example.invalid/output", contentType: "application/octet-stream", metadata: { purpose: "synthetic" } },
+  { kind: "blob", mimeType: "application/octet-stream", fileName: "synthetic.output" },
+  { kind: "array-buffer" },
+  { kind: "uint8-array" },
+  { kind: "stream", stream: new WritableStream<Uint8Array>() },
+  { kind: "package", packageFormat: "zip", destinationHint: "synthetic.zip", includeSourcePayload: false },
+];
+```
+
+HTTP(S) URLs with inline username/password are rejected. Storage descriptors
+support anonymous, signed and runtime-resolved credential modes; values are
+passed only to the injected adapter. Browser Web streams and Node
+`AsyncIterable<Uint8Array>` readable / structural `write`+`end` writable streams
+are supported without importing Node types into the public declarations.
+Memory input bytes are copied; Blob values are immutable, and streams remain
+opaque capabilities. Direct memory descriptors are capped at 64 MiB. Larger
+models should use streams with runtime-enforced budgets and worker isolation.
+
+Adapters construct their shared envelope with `createModelResultBase`:
+
+```ts
+import { createModelResultBase, type ModelOperationOptions } from "@plasius/gpu-model-core";
+
+function completedEvidence(options: ModelOperationOptions = {}) {
+  const mode = options.mode ?? "strict";
+  return createModelResultBase({
+    standard: "gltf-glb", // Use the adapter's actual diagnostic profile.
+    mode, allowLoss: options.allowLoss ?? false, issues: [],
+    ...(mode === "forensic" ? { rawSource: { synthetic: true } } : {}),
+  });
+}
+// load: { ...completedEvidence(options), document: verifiedDocument }
+// inspect: { ...completedEvidence(options), capabilities: metadata, detectedFormat: metadata.formatId }
+// validate: { ...completedEvidence(options), valid: true }
+// export: { ...completedEvidence(options), target: target.kind, output: optionalMemoryPayload }
+```
+
+The factory reuses `evaluateGpuModelDiagnostics`; its immutable report is privately
+recorded. Spread the returned base unchanged into an operation result. Structural
+clones and invented report/projection arrays are rejected. `warnings` projects
+warning-severity diagnostics, `repairs` retains completed repair evidence, and
+`lossReports` retains dropped/approximated fidelity. The registry checks the
+caller's mode and loss consent independently, so an adapter cannot grant itself
+permission. Unknown/unsupported semantics remain blocking in all modes.
+
+`ModelLoadResult.document` is optional only for refused operations; accepted
+loads require a privately verified document from this core module instance.
+`ModelExportResult.output` optionally carries Blob, ArrayBuffer or Uint8Array
+matching the selected memory target. A `ResourcePackageManifest` describes
+portable relative paths, roles and content types; duplicate identities/paths and
+unsafe paths are rejected. It is not proof of output bytes or promotion.
+Canonical resource identity remains in `GpuModelDocument` and the separately
+available resource graph. Cross-worker/module clones must be reverified and
+reports rebuilt before registry use.
+
+Registry results retain per-stage diagnostic reports, preserving different source
+and target profiles, plus aggregate diagnostic/repair/loss arrays. The synthetic
+`capabilities` stage uses the core `gltf-glb` report profile solely as a container
+for format-neutral loss records; it applies no format-specific repair rules.
+It reports animation, rig/skin and analytic-geometry downgrade when the target's
+capability flags cannot preserve those values. Other prospective losses must be
+reported by target validation. Adapters must stage writes and reject unconsented
+loss **before** committing; core cannot undo an injected adapter's side effects.
+Always check `accepted`, including after export, and do not equate a manifest or
+adapter result with independently verified publication.
+
+Each registry allows at most 128 adapters and eight concurrent operations
+(configurable downward with `maxConcurrent`). Each operation or whole conversion
+has a 30-second default deadline, configurable up to five minutes, and supports
+`AbortSignal`. No retries occur. Cancellation and timeouts stop subsequent stages;
+an unresponsive operation keeps its capacity slot until the underlying promise
+settles. Synchronous parser code cannot be preempted, so isolate untrusted code
+in runtime workers. Descriptor/report/manifest limits bound core work; raw
+JavaScript Proxies and injected adapter/stream implementations are trusted code,
+not a sandbox boundary.
+
+The IO examples are covered by `tests/adapter-registry.test.ts`; all TypeScript
+blocks in this section are additionally compiled against the built public
+package during release verification. See [ADR-0010](docs/adrs/adr-0010-canonical-adapter-registry.md)
+for compatibility with the initial site design and package ownership boundaries.

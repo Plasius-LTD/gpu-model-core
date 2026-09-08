@@ -10,7 +10,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Portable source/target IO and adapter contracts, immutable capability registration, and bounded canonical conversion with caller-owned repair/loss policy and per-stage diagnostics.
 
 - **Changed**
   - (placeholder)
