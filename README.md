@@ -69,6 +69,72 @@ UI capability. Synthetic contract fixtures cover glTF, OBJ, FBX and CAD reports;
 actual parsing and geometry verification belong to their format adapters.
 See [ADR-0008](docs/adrs/adr-0008-bounded-adapter-diagnostics-and-repair-ledgers.md).
 
+## Canonical conversion resource graph
+
+`createGpuModelResourceGraph` projects a privately verified `GpuModelDocument`
+into a frozen dependency graph for resources, accessors, textures, materials,
+skeletons (including joints), skins, animations, provenance and conversion
+packages. It reuses the canonical values and immutable `Blob` payloads. Material
+bindings retain samplers and intended usage; texture values retain their hashes,
+MIME types, paths, colour spaces and export embedding policy.
+
+```ts
+import { createGpuModelResourceGraph, gpuModelResourceKey,
+  type GpuModelDocument } from "@plasius/gpu-model-core";
+
+declare const document: GpuModelDocument; // From the verification factory.
+const graph = createGpuModelResourceGraph(document, {
+  resources: document.resources.map(resource => ({
+    resourceId: resource.id,
+    location: { kind: "embedded" },
+    exportEmbeddingPolicy: "inherit-source",
+  })),
+  packages: [{ id: "conversion", members: document.resources.map(resource => ({
+    kind: "resource", id: resource.id,
+  })) }],
+});
+const conversion = graph.nodes.find(node =>
+  node.key === gpuModelResourceKey("package", "conversion"));
+```
+
+Supply exactly one binding per document resource. For external origins use
+`location: { kind: "external", relativePath: "textures/albedo.png" }`; the bytes
+must already have been resolved and verified. Paths use portable ASCII letters,
+digits, dots, underscores, hyphens and slash separators, with no absolute paths,
+traversal, URL syntax, device names or trailing dots. Components are at most 255
+characters and paths at most 1024. Case-insensitive duplicate paths and file versus
+directory collisions fail. Descriptors do not authorize network/file access.
+
+Resource export policies are `inherit-source`, `prefer-embedded`,
+`prefer-external` and `forbid-embedding`. The last requires an external origin.
+Exporters must satisfy resource and texture restrictions together, resolve
+preferences for the target, enforce destination-root confinement and validate
+their actual output. The graph neither writes packages nor proves export success.
+Asset catalogue admission and promotion remain owned by `@plasius/asset-contracts`.
+
+`gpuModelResourceKey(kind, id)` encodes a JSON tuple, independent of declaration
+order and locale. Logical IDs are distinct from byte-content hashes. Nodes and
+dependency keys are sorted; joint/animation sample order stays intact. Package
+members are typed references, may include packages, and must form a DAG. Missing,
+repeated or cyclic references fail with fixed `GpuModelResourceGraphError.code`
+values. Canonical document validation still owns scene and semantic references.
+Animation target associations remain in canonical values, outside dependency
+edges. This is a resource dependency graph, not a replacement scene graph.
+
+`GPU_MODEL_RESOURCE_GRAPH_LIMITS` caps 65536 nodes, 262144 dependency declarations
+(including repeated semantic dependencies before deduplication), and 256 packages.
+These ceilings may reject a large otherwise-valid canonical document. Construction
+performs no I/O, retries, logging or hashing; input accessors and malformed
+containers fail closed. Do not treat executable JavaScript Proxies as inert input.
+`isGpuModelResourceGraph` recognizes only locally constructed graphs. Structured
+clones must be rebuilt from a reverified document. The graph retains authored
+metadata and provenance: it is not a redaction boundary or a public logging format.
+
+Adoption inherits the remotely evaluated `gpu.model.conversion.enabled` flag;
+rollback disables conversion adoption and pins the prior package release. No
+stored flag or UI capability changes here. See
+[ADR-0009](docs/adrs/adr-0009-canonical-conversion-resource-graph.md).
+
 ## Implementation tracker
 
 The canonical conversion architecture is defined by [ADR 0094 in `plasius-ltd-site`](https://github.com/Plasius-LTD/plasius-ltd-site/blob/main/docs/adrs/adr-0094-gpu-model-family-and-canonical-proxy-conversion.md). The package implementation work is split into Project-tracked Tasks:
