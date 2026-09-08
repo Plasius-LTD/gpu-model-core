@@ -1,0 +1,9 @@
+{
+  "id": "cad-corrupt",
+  "format": "cad-bim",
+  "rawPayload": { "format": "STEP AP242", "entities": ["#10=PRODUCT('Bracket');", "#20=ADVANCED_FACE(...);"] , "materialRef": "#999" },
+  "issues": [
+    { "ruleId": "malformed-material-reference", "path": "/entities/1/materialRef", "originalValue": "#999", "message": "Analytic surface references a missing material entity." },
+    { "ruleId": "bad-winding", "path": "/tessellation/faces/0/orientation", "originalValue": "reversed", "message": "Tessellated fallback face orientation is inconsistent." }
+  ]
+}

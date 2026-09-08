@@ -1,0 +1,10 @@
+{
+  "id": "gltf-corrupt",
+  "format": "gltf",
+  "rawPayload": { "asset": { "version": "2.0" }, "meshes": [{ "primitives": [{ "attributes": { "POSITION": 0 }, "indices": [0, 1, 99] }] }], "nodes": [{ "translation": ["NaN", 0, 0] }] },
+  "issues": [
+    { "ruleId": "missing-normals", "path": "/meshes/0/primitives/0/attributes/NORMAL", "originalValue": null, "message": "POSITION is present but NORMAL is absent." },
+    { "ruleId": "invalid-indices", "path": "/meshes/0/primitives/0/indices/2", "originalValue": 99, "message": "Index exceeds the POSITION accessor vertex count." },
+    { "ruleId": "nan-transforms", "path": "/nodes/0/translation/0", "originalValue": "NaN", "message": "Node translation contains a non-finite value." }
+  ]
+}

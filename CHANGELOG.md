@@ -10,7 +10,9 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Added bounded strict, tolerant and forensic diagnostics with typed repair,
+    unsupported-data and conversion-loss ledgers, immutable source snapshots,
+    and corrupt glTF/OBJ/FBX/CAD contract fixtures.
 
 - **Changed**
   - Aligned GitHub CI, release preparation, immutable package sealing, npm OIDC

@@ -1,0 +1,9 @@
+{
+  "id": "fbx-corrupt",
+  "format": "fbx",
+  "rawPayload": { "header": "Kaydara FBX Binary", "nodes": [{ "name": "Armature", "translation": [0, "Infinity", 0] }], "skin": { "weights": [[0.8, 0.8]] } },
+  "issues": [
+    { "ruleId": "non-normalized-weights", "path": "/skin/weights/0", "originalValue": [0.8, 0.8], "message": "Influence weights sum to 1.6." },
+    { "ruleId": "nan-transforms", "path": "/nodes/0/translation/1", "originalValue": "Infinity", "message": "Node translation contains a non-finite value." }
+  ]
+}

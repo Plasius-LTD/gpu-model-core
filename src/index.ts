@@ -8,3 +8,5 @@ export const packageBootstrap = Object.freeze({
 } as const);
 
 export * from "./model-document.js";
+
+export * from "./diagnostics.js";
