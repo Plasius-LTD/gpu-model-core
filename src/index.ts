@@ -12,3 +12,5 @@ export * from "./model-document.js";
 export * from "./diagnostics.js";
 
 export * from "./resource-graph.js";
+
+export * from "./adapter-registry.js";
