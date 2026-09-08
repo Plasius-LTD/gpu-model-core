@@ -10,6 +10,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.3.0] - 2026-09-08
+
+- **Added**
   - Added a bounded, immutable canonical resource dependency graph with verified
     payloads, embedded/external location descriptors, typed conversion packages,
     deterministic references and missing/duplicate/cycle validation.
@@ -420,7 +434,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ---
 
-[Unreleased]: https://github.com/Plasius-LTD/gpu-model-core/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Plasius-LTD/gpu-model-core/compare/v0.3.0...HEAD
 [1.0.0]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.0
 [1.0.13]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.13
 [1.0.17]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.17
@@ -457,3 +471,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [1.2.17]: https://github.com/Plasius-LTD/schema/releases/tag/v1.2.17
 [0.1.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.2.0
+[0.3.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.3.0
