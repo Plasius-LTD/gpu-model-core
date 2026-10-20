@@ -268,7 +268,13 @@ export type GpuModelTextureUsage =
   | "clearcoat-roughness"
   | "clearcoat-normal"
   | "sheen-color"
-  | "sheen-roughness";
+  | "sheen-roughness"
+  | "thickness"
+  | "specular"
+  | "specular-color"
+  | "iridescence"
+  | "iridescence-thickness"
+  | "anisotropy";
 
 export interface GpuModelTextureTransform {
   readonly offset?: GpuModelVec2;
@@ -300,6 +306,14 @@ export interface GpuModelMaterialTextures {
   readonly clearcoatNormal?: GpuModelTextureBinding;
   readonly sheenColor?: GpuModelTextureBinding;
   readonly sheenRoughness?: GpuModelTextureBinding;
+  /** Volume thickness; channel interpretation belongs to the format adapter. */
+  readonly thickness?: GpuModelTextureBinding;
+  /** Dielectric specular strength and color use distinct texture interpretations. */
+  readonly specular?: GpuModelTextureBinding;
+  readonly specularColor?: GpuModelTextureBinding;
+  readonly iridescence?: GpuModelTextureBinding;
+  readonly iridescenceThickness?: GpuModelTextureBinding;
+  readonly anisotropy?: GpuModelTextureBinding;
 }
 
 export interface GpuModelMaterial {
@@ -518,6 +532,7 @@ const BUFFER_MIME_TYPES = new Set(["application/octet-stream", "application/vnd.
 const TEXTURE_USAGES: readonly GpuModelTextureUsage[] = Object.freeze([
   "base-color", "metallic-roughness", "normal", "occlusion", "emissive", "transmission",
   "clearcoat", "clearcoat-roughness", "clearcoat-normal", "sheen-color", "sheen-roughness",
+  "thickness", "specular", "specular-color", "iridescence", "iridescence-thickness", "anisotropy",
 ]);
 const MATERIAL_TEXTURE_SLOTS = Object.freeze({
   baseColor: "base-color",
@@ -531,6 +546,12 @@ const MATERIAL_TEXTURE_SLOTS = Object.freeze({
   clearcoatNormal: "clearcoat-normal",
   sheenColor: "sheen-color",
   sheenRoughness: "sheen-roughness",
+  thickness: "thickness",
+  specular: "specular",
+  specularColor: "specular-color",
+  iridescence: "iridescence",
+  iridescenceThickness: "iridescence-thickness",
+  anisotropy: "anisotropy",
 } as const satisfies Readonly<Record<keyof GpuModelMaterialTextures, GpuModelTextureUsage>>);
 
 const verifiedResources = new WeakSet<object>();

@@ -10,6 +10,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
+  - Validated canonical thickness, specular strength/color, iridescence factor/thickness and anisotropy texture slots, preserving verified resource closure, UV transforms and deterministic graph/encoding semantics. Existing documents and the texture-free static compiler retain their contracts.
   - (placeholder)
 
 - **Changed**

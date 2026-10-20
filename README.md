@@ -71,6 +71,25 @@ See [ADR-0008](docs/adrs/adr-0008-bounded-adapter-diagnostics-and-repair-ledgers
 
 ## Canonical conversion resource graph
 
+Material texture bindings include `thickness`, `specular`, `specularColor`,
+`iridescence`, `iridescenceThickness` and `anisotropy`, alongside the existing
+core PBR, transmission, clearcoat and sheen slots. Their intended usages are
+`thickness`, `specular`, `specular-color`, `iridescence`,
+`iridescence-thickness` and `anisotropy`, respectively. Each binding references
+a texture whose verified image identity, usage, colour space and sampler agree;
+the selected UV set must exist on the referencing primitive. Offset, scale and
+rotation in radians retain their authored values. Separate texture nodes may
+share one verified image when different colour interpretations are required.
+
+The owning format adapter validates extension factors, channel interpretation
+and format defaults. Core's bounded `extensions` metadata is not a substitute
+for validated texture references and does not certify KHR extension support.
+Unknown slots and usages remain rejected. Existing documents retain their
+canonical encoding and hashes; documents using the additional slots require
+the release introducing them (or later). The static-demo compiler remains
+texture-free and rejects these bindings. No parser, decoder or I/O is added.
+See [ADR-0011](docs/adrs/adr-0011-extended-material-texture-slots.md).
+
 `createGpuModelResourceGraph` projects a privately verified `GpuModelDocument`
 into a frozen dependency graph for resources, accessors, textures, materials,
 skeletons (including joints), skins, animations, provenance and conversion

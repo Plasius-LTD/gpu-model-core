@@ -10,3 +10,4 @@
 - [ADR-0008: Bounded adapter diagnostics and repair ledgers](./adr-0008-bounded-adapter-diagnostics-and-repair-ledgers.md)
 - [ADR-0009: Canonical conversion resource graph](./adr-0009-canonical-conversion-resource-graph.md)
 - [ADR-0010: Canonical adapter capability and conversion registry](./adr-0010-canonical-adapter-registry.md)
+- [ADR-0011: Additional canonical material texture bindings](./adr-0011-extended-material-texture-slots.md)
