@@ -10,13 +10,13 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 ## [Unreleased]
 
 - **Added**
-  - (placeholder)
+  - Optional authored node rest TRS and ordered per-instance morph weight bindings; byte-verified `node-weights` animation vectors with bounded arity validation.
 
 - **Changed**
   - (placeholder)
 
 - **Fixed**
-  - (placeholder)
+  - Preserve finite signed blend-shape default weights rather than restricting them to [0, 1].
 
 - **Security**
   - (placeholder)

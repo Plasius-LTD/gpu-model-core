@@ -234,6 +234,42 @@ through `createAndVerifyGpuModelDocument` again. Format parsing, renderer
 uploads, catalogue rights, promotion identity, tolerant repair, and target loss
 reporting stay outside this Task's package boundary.
 
+## Node-scoped animation fidelity
+
+Nodes may retain optional `restLocalTransform` (translation, quaternion rotation,
+scale), checked as T*R*S against required `localMatrix`. Authored quaternion sign
+and negative/zero scales are preserved. Matrix-only documents remain valid;
+core does not infer a decomposition or normalize authored components.
+
+Optional `morphWeights` is an ordered array of `{ blendShapeId, weight }` with
+one entry per shape owned by the node's mesh. Two nodes can reference the same
+mesh with independent weights and channels. The adapter resolves effective
+source defaults and target order. Weights and shape `defaultWeight` are finite
+signed numbers; they are not clamped to [0,1]. Omitted bindings keep the existing
+mesh-default behavior and are not inferred by the validator.
+
+A `node-weights` channel targets a node ID with explicit bindings. Its f32 scalar
+output accessor has K*N values for step/linear or K*3*N for cubic spline (N
+bindings, K times). Cubic keys retain N incoming tangents, N values and N outgoing
+tangents. Shared samplers require equal type/arity; duplicate node-weight targets
+in a clip fail. Legacy `weights` still targets one shape with K or 3*K scalars.
+Bytes, references, finite values, authored output equality and immutability are
+validated. There are at most 65,536 bindings/node and 262,144/document; existing
+accessor/animation budgets also apply.
+
+This is canonical data, not an animation evaluator or renderer promise. Bounds
+remain base geometry bounds, not a swept/deformed envelope. The strict/static
+projection still refuses morph, skin and animation content. Older core versions
+reject the new optional grammar; pin a compatible released producer/core/consumer
+set and handle the added union member in exhaustive TypeScript consumers. No new
+fields/defaults are injected into old document encodings.
+
+Consumer adoption inherits remote `gpu.model.conversion.enabled`; core validation
+always applies without flag I/O. Rollback retains the prior compatible set and
+loader. See [ADR-0012](docs/adrs/adr-0012-node-scoped-animation-bindings.md) and
+[TDR-0002](docs/tdrs/tdr-0002-node-animation-binding-contract.md). glTF import/export
+and browser/rendering qualification remain separate downstream work.
+
 ## Bounded static PVOX demo projection
 
 Task #13 adds a deliberately narrower compiler hand-off without changing the
