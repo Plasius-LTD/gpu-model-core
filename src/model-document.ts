@@ -26,6 +26,7 @@ export const GPU_MODEL_DOCUMENT_LIMITS = Object.freeze({
   joints: 65_536,
   skins: 4_096,
   blendShapes: 65_536,
+  morphWeightBindings: 262_144,
   blendShapeDeltas: 262_144,
   blendShapeAccessorReferences: 786_432,
   animations: 4_096,
@@ -163,6 +164,12 @@ export interface GpuModelBounds {
   readonly max: GpuModelVec3;
 }
 
+/** One ordered node-instance morph binding; weights are finite and need not lie in [0, 1]. */
+export interface GpuModelMorphWeight {
+  readonly blendShapeId: string;
+  readonly weight: number;
+}
+
 export interface GpuModelNode {
   readonly id: string;
   readonly name?: string;
@@ -170,6 +177,10 @@ export interface GpuModelNode {
   readonly meshId?: string;
   readonly skinId?: string;
   readonly localMatrix: GpuModelMatrix4;
+  /** Authored T*R*S rest pose. When present it must agree with localMatrix. */
+  readonly restLocalTransform?: GpuModelTransformTrs;
+  /** Complete effective weights for this node's mesh; order defines node-weights animation output. */
+  readonly morphWeights?: readonly GpuModelMorphWeight[];
   readonly metadata?: GpuModelMetadata;
 }
 
@@ -428,7 +439,7 @@ export interface GpuModelAnimationSampler {
   readonly sourceMetadata: GpuModelSourceMetadata;
 }
 
-export type GpuModelAnimationTargetType = "node-translation" | "node-rotation" | "node-scale" | "weights";
+export type GpuModelAnimationTargetType = "node-translation" | "node-rotation" | "node-scale" | "weights" | "node-weights";
 export interface GpuModelAnimationChannel {
   readonly id: string;
   readonly samplerId: string;
@@ -571,6 +582,7 @@ interface DocumentBudget {
   animationSamplers: number;
   animationChannels: number;
   animationValues: number;
+  morphWeightBindings: number;
   blendShapeDeltas: number;
   blendShapeAccessorReferences: number;
   geometryIndexElements: number;
@@ -1124,7 +1136,7 @@ export async function verifyGpuModelResource(
 }
 
 function parseNode(value: unknown, path: string, budget: DocumentBudget): GpuModelNode {
-  const record = readRecord(value, path, ["id", "name", "children", "meshId", "skinId", "localMatrix", "metadata"]);
+  const record = readRecord(value, path, ["id", "name", "children", "meshId", "skinId", "localMatrix", "restLocalTransform", "morphWeights", "metadata"]);
   const children = Object.freeze(readArray(requireKey(record, "children", path), `${path}.children`, GPU_MODEL_DOCUMENT_LIMITS.nodes)
     .map((entry, index) => readId(entry, `${path}.children[${index}]`)));
   consumeBudget(budget, "sceneEdges", children.length, GPU_MODEL_DOCUMENT_LIMITS.sceneEdges, path, "scene edge");
@@ -1137,6 +1149,28 @@ function parseNode(value: unknown, path: string, budget: DocumentBudget): GpuMod
   assignOptional(output, "name", readOptional(record, "name", (entry, entryPath) => readString(entry, entryPath, GPU_MODEL_DOCUMENT_LIMITS.nameLength), path));
   assignOptional(output, "meshId", readOptional(record, "meshId", readId, path));
   assignOptional(output, "skinId", readOptional(record, "skinId", readId, path));
+  const rest = readOptional(record, "restLocalTransform", parseTransformTrs, path);
+  if (rest !== undefined) {
+    const matrix = composeTransformTrs(rest);
+    if (!matrix.every(Number.isFinite) || !matrixAlmostEqual(matrix, output.localMatrix as GpuModelMatrix4)) {
+      return fail("invalid-value", `${path}.restLocalTransform`, "authored TRS must match local matrix");
+    }
+    output.restLocalTransform = rest;
+  }
+  assignOptional(output, "morphWeights", readOptional(record, "morphWeights", (value, entryPath) => {
+    const input = readArray(value, entryPath, GPU_MODEL_DOCUMENT_LIMITS.blendShapes, 1);
+    consumeBudget(budget, "morphWeightBindings", input.length, GPU_MODEL_DOCUMENT_LIMITS.morphWeightBindings, entryPath, "morph binding");
+    const bindings = input.map((entry, index) => {
+      const bindingPath = `${entryPath}[${index}]`;
+      const binding = readRecord(entry, bindingPath, ["blendShapeId", "weight"]);
+      return {
+        blendShapeId: readId(requireKey(binding, "blendShapeId", bindingPath), `${bindingPath}.blendShapeId`),
+        weight: readFinite(requireKey(binding, "weight", bindingPath), `${bindingPath}.weight`),
+      };
+    });
+    ensureUnique(bindings.map(binding => binding.blendShapeId), entryPath, "duplicate morph binding");
+    return bindings;
+  }, path));
   assignOptional(output, "metadata", readOptional(record, "metadata", (entry, entryPath) => readMetadata(entry, entryPath, budget), path));
   return output as unknown as GpuModelNode;
 }
@@ -1427,7 +1461,7 @@ function parseBlendShape(value: unknown, path: string, budget: DocumentBudget): 
     sourceMetadata: readMetadata(requireKey(record, "sourceMetadata", path), `${path}.sourceMetadata`, budget),
   };
   assignOptional(output, "name", readOptional(record, "name", (entry, entryPath) => readString(entry, entryPath, GPU_MODEL_DOCUMENT_LIMITS.nameLength), path));
-  assignOptional(output, "defaultWeight", readOptional(record, "defaultWeight", (entry, entryPath) => readFinite(entry, entryPath, 0, 1), path));
+  assignOptional(output, "defaultWeight", readOptional(record, "defaultWeight", readFinite, path));
   return output as unknown as GpuModelBlendShape;
 }
 
@@ -1456,7 +1490,7 @@ function parseAnimationChannel(value: unknown, path: string, budget: DocumentBud
   return {
     id: readId(requireKey(record, "id", path), `${path}.id`),
     samplerId: readId(requireKey(record, "samplerId", path), `${path}.samplerId`),
-    targetType: readEnum(requireKey(record, "targetType", path), `${path}.targetType`, ["node-translation", "node-rotation", "node-scale", "weights"] as const),
+    targetType: readEnum(requireKey(record, "targetType", path), `${path}.targetType`, ["node-translation", "node-rotation", "node-scale", "weights", "node-weights"] as const),
     targetId: readId(requireKey(record, "targetId", path), `${path}.targetId`),
     sourceMetadata: readMetadata(requireKey(record, "sourceMetadata", path), `${path}.sourceMetadata`, budget),
   };
@@ -1545,6 +1579,16 @@ function almostEqual(left: number, right: number, epsilon = EPSILON): boolean {
 
 function matrixAlmostEqual(left: GpuModelMatrix4, right: GpuModelMatrix4): boolean {
   return left.every((value, index) => almostEqual(value, right[index]!));
+}
+
+/** Column-major affine T*R*S, without decomposing or normalizing authored values. */
+function composeTransformTrs({ translation: [tx, ty, tz], rotation: [x, y, z, w], scale: [sx, sy, sz] }: GpuModelTransformTrs): GpuModelMatrix4 {
+  return [
+    (1 - 2 * (y * y + z * z)) * sx, 2 * (x * y + z * w) * sx, 2 * (x * z - y * w) * sx, 0,
+    2 * (x * y - z * w) * sy, (1 - 2 * (x * x + z * z)) * sy, 2 * (y * z + x * w) * sy, 0,
+    2 * (x * z + y * w) * sz, 2 * (y * z - x * w) * sz, (1 - 2 * (x * x + y * y)) * sz, 0,
+    tx, ty, tz, 1,
+  ];
 }
 
 function multiplyMatrices(left: GpuModelMatrix4, right: GpuModelMatrix4): GpuModelMatrix4 {
@@ -1895,6 +1939,22 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
     meshEvidenceById.set(mesh.id, Object.freeze({ primitiveIds, positionReaders }));
   }
 
+  const morphCountByMesh = new Map<string, number>();
+  for (const shape of document.blendShapes) morphCountByMesh.set(shape.meshId, (morphCountByMesh.get(shape.meshId) ?? 0) + 1);
+  for (let nodeIndex = 0; nodeIndex < document.nodes.length; nodeIndex += 1) {
+    const node = document.nodes[nodeIndex]!;
+    if (node.morphWeights === undefined) continue;
+    const path = `$.nodes[${nodeIndex}].morphWeights`;
+    if (!node.meshId) return fail("invalid-reference", path, "morph bindings require a mesh");
+    for (const binding of node.morphWeights) {
+      const shape = requireReference(blendShapes, binding.blendShapeId, path, "blend shape");
+      if (shape.meshId !== node.meshId) return fail("invalid-reference", path, "morph binding must belong to the node mesh");
+    }
+    if (node.morphWeights.length !== (morphCountByMesh.get(node.meshId) ?? 0)) {
+      return fail("invalid-reference", path, "morph bindings must exactly cover the node mesh blend shapes");
+    }
+  }
+
   const worldGeometry: Array<{
     readonly nodeIndex: number;
     readonly world: GpuModelMatrix4;
@@ -2124,6 +2184,8 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
     indexById(animation.channels, `$.animations[${animationIndex}].channels`);
     const usedSamplerIds = new Set<string>();
     const targetTypesBySampler = new Map<string, GpuModelAnimationTargetType>();
+    const arityBySampler = new Map<string, number>();
+    const nodeWeightTargets = new Set<string>();
     for (let channelIndex = 0; channelIndex < animation.channels.length; channelIndex += 1) {
       const channel = animation.channels[channelIndex]!;
       const path = `$.animations[${animationIndex}].channels[${channelIndex}]`;
@@ -2133,7 +2195,18 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
       if (previousTarget && previousTarget !== channel.targetType) return fail("invalid-reference", `${path}.samplerId`, "one animation sampler cannot drive incompatible target types");
       targetTypesBySampler.set(sampler.id, channel.targetType);
       if (channel.targetType === "weights") requireReference(blendShapes, channel.targetId, `${path}.targetId`, "blend shape");
-      else requireReference(nodes, channel.targetId, `${path}.targetId`, "node");
+      else {
+        const node = requireReference(nodes, channel.targetId, `${path}.targetId`, "node");
+        if (channel.targetType === "node-weights") {
+          if (!node.morphWeights) return fail("invalid-reference", `${path}.targetId`, "node-weights target requires explicit morphWeights");
+          if (nodeWeightTargets.has(node.id)) return fail("invalid-reference", `${path}.targetId`, "duplicate node-weights animation target");
+          nodeWeightTargets.add(node.id);
+          const arity = node.morphWeights.length;
+          const previousArity = arityBySampler.get(sampler.id);
+          if (previousArity !== undefined && previousArity !== arity) return fail("invalid-reference", `${path}.samplerId`, "shared sampler has incompatible morph arity");
+          arityBySampler.set(sampler.id, arity);
+        }
+      }
     }
     if (usedSamplerIds.size !== animation.samplers.length) return fail("invalid-reference", `$.animations[${animationIndex}].samplers`, "animation contains an unused sampler");
     for (let samplerIndex = 0; samplerIndex < animation.samplers.length; samplerIndex += 1) {
@@ -2150,10 +2223,11 @@ function validateReferences(document: GpuModelDocument, budget: DocumentBudget):
       }
       if (sampler.inputTimesSeconds.at(-1)! > animation.durationSeconds + EPSILON) return fail("invalid-value", `${path}.inputTimesSeconds`, "animation key time exceeds clip duration");
       const targetType = requireReference(targetTypesBySampler, sampler.id, path, "sampler target type");
-      const expectedElementType: GpuModelAccessorElementType = targetType === "node-rotation" ? "vec4" : targetType === "weights" ? "scalar" : "vec3";
+      const expectedElementType: GpuModelAccessorElementType = targetType === "node-rotation" ? "vec4" : (targetType === "weights" || targetType === "node-weights") ? "scalar" : "vec3";
       if (output.componentType !== "f32" || output.elementType !== expectedElementType || output.normalized === true) return fail("invalid-reference", `${path}.outputAccessorId`, "animation output has an invalid accessor representation");
       const multiplier = sampler.interpolation === "cubic-spline" ? 3 : 1;
-      if (output.count !== input.count * multiplier) return fail("invalid-reference", `${path}.outputAccessorId`, "animation input and output element counts are inconsistent");
+      const arity = arityBySampler.get(sampler.id) ?? 1;
+      if (output.count !== input.count * multiplier * arity) return fail("invalid-reference", `${path}.outputAccessorId`, "animation input and output element counts are inconsistent");
       const expectedValues = output.count * ELEMENT_COMPONENTS[output.elementType];
       if (sampler.outputValues.length !== expectedValues) return fail("invalid-reference", `${path}.outputValues`, "authored output value count does not match its accessor");
       const outputReader = requireReference(readers, output.id, `${path}.outputAccessorId`, "accessor reader");
@@ -2214,6 +2288,7 @@ function parseGpuModelDocument(value: unknown): GpuModelDocument {
     animationSamplers: 0,
     animationChannels: 0,
     animationValues: 0,
+    morphWeightBindings: 0,
     blendShapeDeltas: 0,
     blendShapeAccessorReferences: 0,
     geometryIndexElements: 0,
