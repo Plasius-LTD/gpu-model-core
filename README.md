@@ -234,6 +234,35 @@ through `createAndVerifyGpuModelDocument` again. Format parsing, renderer
 uploads, catalogue rights, promotion identity, tolerant repair, and target loss
 reporting stay outside this Task's package boundary.
 
+## Empty animation clips
+
+An authored take with no motion is an animation with `samplers: []` and
+`channels: []`. Its `id`, optional `name`, nonnegative finite `durationSeconds`
+and bounded `sourceMetadata` survive validation, canonical encoding and resource
+graphs. Zero-duration and nonzero-duration clips are both valid. No dummy node,
+sampler, accessor, payload or animation channel is needed. A graph retains the
+clip's identity and package membership with no accessor dependencies.
+
+Both arrays remain required. Channels must reference valid samplers, and every
+populated sampler must be used. Empty clips still consume the document's clip
+and metadata budgets; all populated-clip byte/time/value/reference checks apply.
+Static projections continue to reject documents containing animations.
+
+Adapters own source time normalization and fidelity: keep original negative or
+nonzero local/reference starts, rates and layer evidence in bounded source
+metadata, and express canonical duration in seconds. Core preserves that metadata
+without interpreting it as a timing/evaluation contract. It does not parse FBX,
+sample curves, infer spans or calculate animated bounds.
+
+This additive minor release keeps the v1 schema ID and old document encodings.
+Core 0.6.0 and earlier reject empty clips; qualify consumers before adoption.
+The remotely evaluated `gpu.model.conversion.enabled` gate belongs at the
+producer/consumer boundary. Validation remains unconditional. Rollback pins the
+previous compatible producer/core/consumer set; do not feed newly admitted empty
+clips to old validators. See [ADR-0013](docs/adrs/adr-0013-empty-animation-clips.md)
+and [TDR-0003](docs/tdrs/tdr-0003-empty-animation-clip-handoff.md). This prerequisite
+does not complete FBX animation import/export qualification.
+
 ## Node-scoped animation fidelity
 
 Nodes may retain optional `restLocalTransform` (translation, quaternion rotation,

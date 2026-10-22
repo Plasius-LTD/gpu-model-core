@@ -452,7 +452,9 @@ export interface GpuModelAnimation {
   readonly id: string;
   readonly name?: string;
   readonly durationSeconds: number;
+  /** May be empty only when channels is also empty; no synthetic sampler is required. */
   readonly samplers: readonly GpuModelAnimationSampler[];
+  /** May be empty only when samplers is also empty; populated channels must resolve a sampler. */
   readonly channels: readonly GpuModelAnimationChannel[];
   readonly sourceMetadata: GpuModelSourceMetadata;
 }
@@ -1498,8 +1500,8 @@ function parseAnimationChannel(value: unknown, path: string, budget: DocumentBud
 
 function parseAnimation(value: unknown, path: string, budget: DocumentBudget): GpuModelAnimation {
   const record = readRecord(value, path, ["id", "name", "durationSeconds", "samplers", "channels", "sourceMetadata"]);
-  const samplerInput = readArray(requireKey(record, "samplers", path), `${path}.samplers`, GPU_MODEL_DOCUMENT_LIMITS.animationSamplers, 1);
-  const channelInput = readArray(requireKey(record, "channels", path), `${path}.channels`, GPU_MODEL_DOCUMENT_LIMITS.animationChannels, 1);
+  const samplerInput = readArray(requireKey(record, "samplers", path), `${path}.samplers`, GPU_MODEL_DOCUMENT_LIMITS.animationSamplers);
+  const channelInput = readArray(requireKey(record, "channels", path), `${path}.channels`, GPU_MODEL_DOCUMENT_LIMITS.animationChannels);
   consumeBudget(budget, "animationSamplers", samplerInput.length, GPU_MODEL_DOCUMENT_LIMITS.animationSamplers, path, "animation sampler");
   consumeBudget(budget, "animationChannels", channelInput.length, GPU_MODEL_DOCUMENT_LIMITS.animationChannels, path, "animation channel");
   const output: Record<string, unknown> = {

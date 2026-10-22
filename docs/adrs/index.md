@@ -12,3 +12,4 @@
 - [ADR-0010: Canonical adapter capability and conversion registry](./adr-0010-canonical-adapter-registry.md)
 - [ADR-0011: Additional canonical material texture bindings](./adr-0011-extended-material-texture-slots.md)
 - [ADR-0012: Node-scoped animation bindings and authored rest TRS](./adr-0012-node-scoped-animation-bindings.md)
+- [ADR-0013: Preserve authored empty animation clips](./adr-0013-empty-animation-clips.md)
