@@ -46,6 +46,15 @@ writes or sandbox dishonest adapter code. Resource manifests describe output
 entries, not asset promotion or byte attestation; canonical resource identity
 continues to belong to the verified document and resource graph.
 
+For a package target, a returned manifest must declare the requested
+`packageFormat` exactly: zip, tar or directory-manifest. The common export stage
+used by registry export and conversion rejects every conflicting format,
+including inline, with the fixed `invalid-result` error after normal manifest
+validation. Keep optional manifests and non-package target semantics unchanged.
+This descriptor consistency check neither proves archive bytes nor rolls back
+adapter writes; moving it into each adapter would leave the canonical boundary
+dependent on adapter correctness. Regression follow-up: gpu-model-core#28.
+
 Bound registrations, descriptors, manifests and simultaneous operations. A shared
 conversion deadline and AbortSignal reach every stage, with no retries. Timeout
 or cancellation stops subsequent stages and returns fixed safe errors; an
