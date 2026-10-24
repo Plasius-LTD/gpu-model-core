@@ -75,7 +75,9 @@ export interface ModelLoadResult extends ModelResultBase {
   readonly document?: GpuModelDocument; readonly resourcePackage?: ResourcePackageManifest;
 }
 export interface ModelExportResult extends ModelResultBase {
-  readonly target: ModelTarget["kind"]; readonly resourcePackage?: ResourcePackageManifest;
+  readonly target: ModelTarget["kind"];
+  /** When returned for a package target, format must equal the requested packageFormat. */
+  readonly resourcePackage?: ResourcePackageManifest;
   readonly output?: Blob | ArrayBuffer | Uint8Array;
 }
 export interface ModelValidateResult extends ModelResultBase { readonly valid: boolean }
@@ -327,6 +329,8 @@ export function createModelConversionRegistry(adapters: readonly ModelAdapter[],
     if (!accepted(report, c) || !await validate(a, document, c, stages)) return ledger(stages, false, { document });
     const v = await invoke(a, "export", c, () => a.export(document, target, c.options), stages);
     if (v.target !== target.kind) fail("invalid-result");
+    if (target.kind === "package" && v.resourcePackage !== undefined
+      && (v.resourcePackage as ResourcePackageManifest).format !== target.packageFormat) fail("invalid-result");
     try {
       if (v.output !== undefined) {
         const output = v.output;

@@ -115,6 +115,63 @@ describe("canonical adapter registry", () => {
 });
 
 describe("registry conformance and defensive boundaries", () => {
+  for (const operation of ["export", "convert"] as const) {
+    for (const requested of ["zip", "tar", "directory-manifest"] as const) {
+      it(`${operation} preserves an optional missing manifest for ${requested}`, async () => {
+        const registry = createModelConversionRegistry([adapter()]);
+        const target: ModelTarget = { kind: "package", packageFormat: requested };
+        const result = await (operation === "export" ? registry.export("fixture", document, target)
+          : registry.convert({ sourceFormat: "fixture", targetFormat: "fixture", source: sources[0]!, target }));
+        expect(result.accepted).toBe(true);
+        expect(result.resourcePackage).toBeUndefined();
+      });
+      it.each(["zip", "tar", "directory-manifest", "inline"] as const)(`${operation} enforces requested ${requested} against returned %s manifest`, async returned => {
+        const a = adapter();
+        const evidence = base();
+        a.export = async (_document, target) => ({
+          ...evidence, target: target.kind,
+          resourcePackage: { format: returned, entries: [{ id: "synthetic", role: "auxiliary", path: "synthetic-private-path.bin" }] },
+        });
+        const registry = createModelConversionRegistry([a]);
+        const target: ModelTarget = { kind: "package", packageFormat: requested, destinationHint: "synthetic-private-destination" };
+        const pending = operation === "export"
+          ? registry.export("fixture", document, target)
+          : registry.convert({ sourceFormat: "fixture", targetFormat: "fixture", source: sources[0]!, target });
+        if (requested !== returned) {
+          await expect(pending).rejects.toMatchObject({ name: "ModelRegistryError", code: "invalid-result", message: "GPU model registry: invalid-result" });
+          return;
+        }
+        const result = await pending;
+        expect(result.accepted).toBe(true);
+        expect(result.exported?.report).toBe(evidence.report);
+        expect(result.stages.map(stage => stage.operation)).toEqual(operation === "export"
+          ? ["capabilities", "validate", "export"] : ["load", "capabilities", "validate", "export"]);
+        expect(result.resourcePackage?.format).toBe(requested);
+        expect(result.exported?.resourcePackage).toBe(result.resourcePackage);
+        expect(Object.isFrozen(result.resourcePackage)).toBe(true);
+        expect(result.diagnostics).toEqual([]);
+        expect(result.warnings).toEqual([]);
+        expect(result.repairs).toEqual([]);
+        expect(result.lossReports).toEqual([]);
+      });
+    }
+    it.each(["zip", "tar", "directory-manifest", "inline"] as const)(`${operation} preserves non-package output with %s manifest and diagnostics`, async format => {
+      const a = adapter();
+      const evidence = base("strict", [{ kind: "loss", code: "MATERIAL", path: "/materials", message: "Synthetic approximation", effect: "approximated" }], true);
+      a.export = async () => ({ ...evidence, target: "uint8-array", output: new Uint8Array([1, 2]), resourcePackage: { format, entries: [] } });
+      const registry = createModelConversionRegistry([a]);
+      const target: ModelTarget = { kind: "uint8-array" };
+      const result = await (operation === "export" ? registry.export("fixture", document, target, { allowLoss: true })
+        : registry.convert({ sourceFormat: "fixture", targetFormat: "fixture", source: sources[0]!, target }, { allowLoss: true }));
+      expect(result.accepted).toBe(true);
+      expect(result.resourcePackage?.format).toBe(format);
+      expect(result.exported?.output).toEqual(new Uint8Array([1, 2]));
+      expect(result.stages.at(-1)?.report).toBe(evidence.report);
+      expect(result.diagnostics).toEqual(evidence.diagnostics);
+      expect(result.lossReports).toEqual(evidence.lossReports);
+      expect(result.repairs).toEqual(evidence.repairs);
+    });
+  }
   it("freezes copied capability lists and captures bound methods", async () => {
     const a = adapter(); const r = createModelConversionRegistry([a]);
     const original = a.load; a.load = async () => { throw new Error("replaced"); };
