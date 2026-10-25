@@ -9,6 +9,20 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+- **Added**
+  - (placeholder)
+
+- **Changed**
+  - (placeholder)
+
+- **Fixed**
+  - (placeholder)
+
+- **Security**
+  - (placeholder)
+
+## [0.7.1] - 2026-10-25
+
 - Refresh npm dependency lockfile to current supported stable versions (weekly maintenance, 2026-10-25).
 
 - **Added**
@@ -592,7 +606,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 
 ---
 
-[Unreleased]: https://github.com/Plasius-LTD/gpu-model-core/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Plasius-LTD/gpu-model-core/compare/v0.7.1...HEAD
 [1.0.0]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.0
 [1.0.13]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.13
 [1.0.17]: https://github.com/Plasius-LTD/schema/releases/tag/v1.0.17
@@ -640,3 +654,4 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
 [0.5.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.5.0
 [0.6.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.6.0
 [0.7.0]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.7.0
+[0.7.1]: https://github.com/Plasius-LTD/gpu-model-core/releases/tag/v0.7.1
