@@ -16,7 +16,7 @@ The format is based on **[Keep a Changelog](https://keepachangelog.com/en/1.1.0/
   - (placeholder)
 
 - **Fixed**
-  - (placeholder)
+  - Reject package export manifests that disagree with the requested zip, tar or directory-manifest format in both registry export and conversion, using the fixed redacted invalid-result error.
 
 - **Security**
   - (placeholder)

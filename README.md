@@ -517,6 +517,12 @@ loads require a privately verified document from this core module instance.
 matching the selected memory target. A `ResourcePackageManifest` describes
 portable relative paths, roles and content types; duplicate identities/paths and
 unsafe paths are rejected. It is not proof of output bytes or promotion.
+When an adapter returns a manifest for a `kind: "package"` target, its `format`
+must equal the requested `packageFormat` (`zip`, `tar` or `directory-manifest`).
+Both `export` and `convert` reject conflicting formats, including `inline`, with
+the fixed `invalid-result` error. A manifest remains optional; non-package targets
+can still return any valid manifest format. This descriptor check performs no
+IO, verifies no archive bytes and cannot undo adapter writes.
 Canonical resource identity remains in `GpuModelDocument` and the separately
 available resource graph. Cross-worker/module clones must be reverified and
 reports rebuilt before registry use.
